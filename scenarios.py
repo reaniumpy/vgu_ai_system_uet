@@ -168,7 +168,10 @@ def build_resume_pdf(inject_attack: bool) -> bytes:
     return bytes(pdf.output())
 
 
-def _extract_pdf_text(pdf_bytes: bytes) -> str:
+def extract_pdf_text(pdf_bytes: bytes) -> str:
+    """Extract raw text from any PDF's bytes -- the generated sample resume,
+    or an arbitrary user-uploaded CV. Public: used by both the CLI's
+    --cv-file flag and the Streamlit app's upload widget."""
     from pypdf import PdfReader
 
     reader = PdfReader(BytesIO(pdf_bytes))
@@ -176,7 +179,7 @@ def _extract_pdf_text(pdf_bytes: bytes) -> str:
 
 
 def _resume_content(inject_attack: bool) -> str:
-    return _extract_pdf_text(build_resume_pdf(inject_attack))
+    return extract_pdf_text(build_resume_pdf(inject_attack))
 
 
 RESUME_SCENARIO = Scenario(

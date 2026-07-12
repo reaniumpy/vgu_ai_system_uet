@@ -53,19 +53,36 @@ def main():
         action="store_true",
         help="Skip the ML guardrail scan (faster, no model load).",
     )
+    parser.add_argument(
+        "--cv-file",
+        default=None,
+        help="Path to a real PDF resume/CV to scan instead of the built-in "
+        "sample (only valid with --scenario resume).",
+    )
     args = parser.parse_args()
+
+    if args.cv_file and args.scenario != "resume":
+        parser.error("--cv-file is only valid with --scenario resume")
 
     scenario = scenarios.SCENARIOS[args.scenario]
     query = args.query if args.query is not None else scenario.default_query
-    inject_attack = not args.no_attack
-    content = scenario.get_content(inject_attack)
+
+    if args.cv_file:
+        with open(args.cv_file, "rb") as f:
+            content = scenarios.extract_pdf_text(f.read())
+    else:
+        inject_attack = not args.no_attack
+        content = scenario.get_content(inject_attack)
+
     prompt = scenarios.build_prompt(query, content, args.defense, scenario)
 
     print("\n############  ASSEMBLED MODEL INPUT  ############\n")
     print(prompt)
     print("###################################################\n")
 
-    if inject_attack:
+    if args.cv_file:
+        print(f"[i] Scanned an uploaded CV file: {args.cv_file}")
+    elif inject_attack:
         print(
             f"[!] This input contains a hidden instruction inside the "
             f"'{scenario.content_label}' data. A vulnerable model may "
