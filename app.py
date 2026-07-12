@@ -6,6 +6,15 @@ import guardrail
 import scenarios
 from scenarios import SCENARIOS, build_prompt, build_resume_pdf
 
+CUSTOM_QUERY_LABEL = "Custom (write your own)"
+
+
+def _apply_suggested_query(query_key, choice_key):
+    choice = st.session_state[choice_key]
+    if choice != CUSTOM_QUERY_LABEL:
+        st.session_state[query_key] = choice
+
+
 st.set_page_config(page_title="Prompt Injection Demo", layout="wide")
 st.title("Indirect Prompt Injection Demo")
 st.caption(
@@ -30,7 +39,16 @@ if use_upload:
     col1.caption("Ignored: the attack is whatever's actually in your uploaded file.")
 
 query_key = f"query_{scenario_key}"
+choice_key = f"suggestion_{scenario_key}"
 st.session_state.setdefault(query_key, scenario.default_query)
+
+st.selectbox(
+    "Suggested questions",
+    [CUSTOM_QUERY_LABEL] + scenario.suggested_queries,
+    key=choice_key,
+    on_change=_apply_suggested_query,
+    args=(query_key, choice_key),
+)
 query = st.text_input("Your question", key=query_key)
 
 if scenario_key == "resume":
