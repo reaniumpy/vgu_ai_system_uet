@@ -33,6 +33,13 @@ class GuardrailResult:
     def blocked(self) -> bool:
         return self.label == "INJECTION"
 
+    @property
+    def malicious_probability(self) -> float:
+        """Probability (0-1) that this text is malicious, regardless of
+        which label the classifier assigned -- lets callers show a
+        consistent risk percentage even when the verdict is SAFE."""
+        return self.score if self.label == "INJECTION" else 1 - self.score
+
 
 def check(text: str, chunk_size: int = 60, stride: int = 30) -> GuardrailResult:
     """Scan text for prompt injection.

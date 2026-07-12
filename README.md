@@ -12,9 +12,13 @@ A small demo — CLI and web (Streamlit) — showing two things end to end:
 2. **How a real ML guardrail model can catch it** before it ever reaches the
    target LLM.
 
-No target LLM (Claude/GPT/etc.) is called here — this demo stops at
-constructing the model's input and running the guardrail check on it. See
-[Next steps](#next-steps) for what's not built yet.
+The **Scenario Tester** tab stops at constructing the model's input and
+running the guardrail check — no target LLM is called there. The **Chat**
+tab goes further: it's a real chat app backed by an actual OpenAI model
+(with tool-calling access to a mock employee database), so you can see the
+whole pipeline end to end — including what happens when a hidden
+instruction tries to manipulate a tool-using agent. See
+[Next steps](#next-steps) for what's still not built.
 
 ## Background: what is BIPIA?
 
@@ -42,12 +46,14 @@ just described.
 | File | Purpose |
 |---|---|
 | [`demo.py`](demo.py) | CLI entry point. Picks a scenario, builds the three-part prompt, optionally injects the attack, optionally applies a border-string defense, and optionally runs the guardrail scan. |
-| [`app.py`](app.py) | Streamlit web UI for the same pipeline — scenario picker, toggles, a suggested-questions dropdown, a Testing/Interview mode switch, an admin-gated log viewer, and (for the resume scenario) a download button for the generated PDF. Every widget has a plain-language tooltip (hover over the `?` icon) for non-technical users. |
+| [`app.py`](app.py) | Streamlit web UI with two tabs: **Scenario Tester** (the CLI's pipeline, plus a Testing/Interview mode switch and an admin-gated log viewer) and **Chat** (a real OpenAI-backed chat agent with tool-calling and a gateway guardrail toggle). Every widget has a plain-language tooltip (hover the `?` icon) for non-technical users. |
 | [`scenarios.py`](scenarios.py) | Shared scenario data and prompt assembly used by both `demo.py` and `app.py`: the email, resume/PDF, and contract scenarios (including the resume's PDF generation + text-extraction helpers, and each scenario's human-readable blocked/safe messages). |
 | [`guardrail.py`](guardrail.py) | Loads [`protectai/deberta-v3-base-prompt-injection-v2`](https://huggingface.co/protectai/deberta-v3-base-prompt-injection-v2) (a small DeBERTa-v3 model fine-tuned to classify text as `INJECTION` vs `SAFE`) and scores a piece of text, scanning in overlapping chunks so a short attack buried in a long document isn't diluted away. |
-| [`interview_log.py`](interview_log.py) | Appends one JSON line per Run to `logs/interview_log.jsonl`, but only when `app.py` is in Interview mode — Testing mode (the default) never logs anything. |
-| [`samples/`](samples) | Extra sample resume PDFs (clean + hidden-injection versions) for testing the resume scenario's upload feature with something other than the built-in example. |
-| `requirements.txt` | Pinned versions of every dependency (`torch`, `transformers`, `fpdf2`, `pypdf`, `streamlit`). |
+| [`llm_client.py`](llm_client.py) | The Chat tab's OpenAI client: a tool-calling chat loop (`chat_with_tools`) and the gateway's forced policy-violation response (`override_refusal`). Model: `gpt-3.5-turbo` — the oldest still-available, cheapest OpenAI chat model, which is plenty for this and still supports tool calling. |
+| [`tools.py`](tools.py) + [`data/`](data) | A mock "employee directory" tool-calling backend: `data/users.json` (10 fake users) and `data/tools.json` (the tool manifest) back four callable tools, one of them (`get_user_sensitive_data`) intentionally marked sensitive so you can red-team whether the agent can be tricked into calling it. |
+| [`interview_log.py`](interview_log.py) | Appends one JSON line per Scenario Tester Run to `logs/interview_log.jsonl`, but only when `app.py` is in Interview mode — Testing mode (the default) never logs anything. |
+| [`samples/`](samples) | Extra sample resume PDFs (clean + hidden-injection versions), and [`prompt_injection_techniques.txt`](samples/prompt_injection_techniques.txt) — an educational reference of injection techniques (context-changing, hidden-in-documents, emoji/hex/Base64-encoded, poetic/role-play framing, DB-call injection, and more) to paste into the Chat tab. |
+| `requirements.txt` | Pinned versions of every dependency (`torch`, `transformers`, `fpdf2`, `pypdf`, `streamlit`, `openai`). |
 | `.venv/` | Local virtual environment. Not committed to git — see [Setup](#setup). |
 
 ## Setup
@@ -67,6 +73,11 @@ caches them locally (`~/.cache/huggingface`); subsequent runs are offline.
 Note: `fpdf2`/`pypdf`/`streamlit` are pinned to versions compatible with
 Python 3.9 (this repo's venv). If you recreate the venv with Python 3.10+,
 newer releases of these packages are available.
+
+For the Chat tab, you'll also need an OpenAI API key — either paste one
+into the app's sidebar each session, or set it once via `OPENAI_API_KEY`
+(env var or `.streamlit/secrets.toml`). The Scenario Tester tab doesn't
+need a key at all.
 
 ## Usage
 
@@ -152,6 +163,50 @@ requires: **"Action blocked: External document attempted unauthorized access
 to restricted data tiers."** — no jargon, no label/score unless you look at
 the "Technical detail" caption underneath.
 
+## Chat tab: a real tool-calling agent behind a gateway guardrail
+
+```bash
+streamlit run app.py
+```
+
+Then open the **💬 Chat** tab. Unlike the Scenario Tester, this actually
+calls OpenAI (`gpt-3.5-turbo`) and lets the model use tools against a mock
+10-user employee directory (`data/users.json`).
+
+**Setup**: paste an OpenAI API key into the sidebar's "OpenAI API key" field
+(session-only, never saved), or set it once via `OPENAI_API_KEY` as an env
+var or in `.streamlit/secrets.toml` (same pattern as `ADMIN_PASSWORD`) so
+you don't have to re-enter it.
+
+**Gateway Guardrail toggle** (sidebar): on by default.
+- **On**: every chat message, and any attached PDF's extracted text, is
+  scanned by `guardrail.py` before reaching the assistant. If either looks
+  like a prompt injection, the assistant never sees the real request —
+  instead, `llm_client.override_refusal()` forces it to reply with exactly
+  *"You are currently violating our policy by having: {reason}."* You'll
+  also see the detected risk percentage for every message, whether or not
+  anything was flagged.
+- **Off**: nothing is scanned — see what an unprotected tool-calling agent
+  would do with the same input.
+
+**PDF attachments**: the chat box only accepts PDFs (`accept_file`,
+`file_type=["pdf"]`). An attached PDF's text is extracted the same way as
+the Scenario Tester's resume upload, then either scanned (gateway on) or
+appended straight into the model's context (gateway off) as untrusted
+document content.
+
+**Tool calls**: when a turn isn't blocked, the assistant can call
+`get_user_profile`, `search_users`, `list_all_users`, or the sensitive
+`get_user_sensitive_data` (SSN/salary) — each call is shown in the chat as
+a caption, with a ⚠️ marker for the sensitive one. This is the DB-call
+injection test: try attaching a PDF containing the DB-call-injection
+example from `samples/prompt_injection_techniques.txt`, with the gateway
+off, and see whether the agent actually calls
+`get_user_sensitive_data` because a document told it to.
+
+An expander above the chat box has a few ready-to-copy example attacks from
+the techniques reference file.
+
 ## Interview mode and logging
 
 The Streamlit app has a **Mode** switch in the sidebar:
@@ -198,9 +253,12 @@ flowchart TD
     P --> H
 ```
 
-Today the "forward to the target LLM" step is not implemented — `demo.py`
-only prints what *would* be sent. The guardrail step runs but nothing acts
-on its verdict yet (see below).
+This diagram describes the CLI and Scenario Tester tab: `demo.py` only
+prints what *would* be sent, and the guardrail step runs but nothing acts
+on its verdict yet. The Chat tab is different — see
+[Chat tab](#chat-tab-a-real-tool-calling-agent-behind-a-gateway-guardrail)
+above, where a flagged verdict genuinely stops the real request and an
+unflagged one really is forwarded to OpenAI.
 
 ## Sequence diagram (runtime flow)
 
@@ -242,14 +300,16 @@ sequenceDiagram
 
 ## Next steps
 
-- [ ] **Enforce the guardrail verdict.** Right now `BLOCKED` is printed but
-      the assembled prompt is shown regardless. Wire it up so a `BLOCKED`
-      verdict actually stops the pipeline (or strips/quarantines the
-      offending content) instead of just logging.
-- [ ] **Call a real target LLM.** Add an Anthropic or OpenAI client behind a
-      flag (e.g. `--call-model`) so we can see whether the *target* model
-      actually gets hijacked when the guardrail is off, and confirm it's
-      protected when the guardrail is on.
+- [ ] **Enforce the guardrail verdict in the Scenario Tester.** Right now
+      `BLOCKED` is printed but the assembled prompt is shown regardless
+      there. (The Chat tab *does* enforce it — a flagged turn never reaches
+      the real assistant, it gets the forced policy-violation response
+      instead.)
+- [x] **Call a real target LLM.** The Chat tab calls OpenAI's
+      `gpt-3.5-turbo` for real, with tool-calling against a mock database —
+      see whether the agent gets hijacked (gateway off) vs. refuses
+      cleanly (gateway on). The Scenario Tester tab still only constructs
+      the prompt without sending it anywhere.
 - [ ] **Load real BIPIA task data.** Swap the single hardcoded email example
       for actual samples from BIPIA's `benchmark/` datasets (EmailQA,
       WebQA, TableQA, CodeQA, Summarization) via the `bipia` package's
@@ -284,6 +344,18 @@ sequenceDiagram
       stride (60/30 words) are reasonable defaults but untested against
       longer or shorter documents — revisit if a new scenario's guardrail
       results look wrong.
+- [ ] **Close the Base64 detection gap.** Tested `guardrail.py` against every
+      technique in `samples/prompt_injection_techniques.txt`: direct
+      override, emoji-encoded, hex-encoded, poetic-hidden, role-play
+      jailbreak, and DB-call injection were all correctly flagged
+      `INJECTION`. The Base64-encoded example was **not** caught (scored
+      `SAFE`, ~1% malicious probability) — the classifier doesn't decode
+      Base64 before scoring. A real fix would need to detect and decode
+      common encodings (Base64, hex, URL-encoding) before running the
+      classifier on the decoded text too.
+- [ ] **Chat tab logging.** Unlike the Scenario Tester, Chat tab
+      conversations aren't logged anywhere (no Interview mode there yet) —
+      add that if you need an audit trail of Chat sessions too.
 
 ## References
 
