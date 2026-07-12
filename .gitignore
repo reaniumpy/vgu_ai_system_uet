@@ -1,0 +1,19 @@
+# Python virtual environment - recreate with the Setup steps in README.md
+.venv/
+
+# Python bytecode/cache
+__pycache__/
+*.pyc
+
+# Downloaded model weights, if ever cached inside the repo instead of
+# the default ~/.cache/huggingface - guardrail.py downloads these on
+# demand the first time it runs, so they should never be committed.
+models/
+*.safetensors
+*.bin
+
+# Local secrets (API keys for a future --call-model step)
+.env
+
+# OS cruft
+.DS_Store
