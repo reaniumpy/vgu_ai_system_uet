@@ -27,6 +27,27 @@ def _apply_suggested_query(query_key, choice_key):
         st.session_state[query_key] = choice
 
 
+def _flatten_for_table(entries):
+    """Make a list of log dicts safe for st.dataframe/Arrow serialization.
+
+    scenario_tester and chat_turn entries have very different shapes, and
+    chat_turn entries carry nested structures (tool_calls is a list of
+    dicts, whose own "result" can itself be a dict or list). Mixing all of
+    that into one pandas DataFrame can produce columns Arrow can't convert
+    on some pyarrow versions. JSON-stringifying any list/dict value keeps
+    every column a plain scalar, which is always safe to display.
+    """
+    flat = []
+    for entry in entries:
+        flat.append(
+            {
+                k: (json.dumps(v) if isinstance(v, (list, dict)) else v)
+                for k, v in entry.items()
+            }
+        )
+    return flat
+
+
 st.set_page_config(page_title="Prompt Injection Demo", layout="wide")
 st.title("Indirect Prompt Injection Demo")
 st.caption(
@@ -450,23 +471,29 @@ with tab_admin:
     )
     if admin_password:
         if admin_password == _get_admin_password():
-            logs = interview_log.read_logs()
-            if not logs:
-                st.info("No interactions have been logged yet.")
-            else:
-                type_filter = st.selectbox(
-                    "Filter by type",
-                    ["All", "scenario_tester", "chat_turn"],
-                    help="Narrow the table to just Scenario Tester runs or just Chat turns.",
-                )
-                shown = logs if type_filter == "All" else [l for l in logs if l.get("type") == type_filter]
-                st.success(f"{len(shown)} logged interaction(s) (of {len(logs)} total).")
-                st.dataframe(shown, width="stretch")
-                st.download_button(
-                    "⬇️ Download all logs (JSON)",
-                    data=json.dumps(shown, indent=2),
-                    file_name="all_logs.json",
-                    mime="application/json",
+            try:
+                logs = interview_log.read_logs()
+                if not logs:
+                    st.info("No interactions have been logged yet.")
+                else:
+                    type_filter = st.selectbox(
+                        "Filter by type",
+                        ["All", "scenario_tester", "chat_turn"],
+                        help="Narrow the table to just Scenario Tester runs or just Chat turns.",
+                    )
+                    shown = logs if type_filter == "All" else [l for l in logs if l.get("type") == type_filter]
+                    st.success(f"{len(shown)} logged interaction(s) (of {len(logs)} total).")
+                    st.dataframe(_flatten_for_table(shown), width="stretch")
+                    st.download_button(
+                        "⬇️ Download all logs (JSON)",
+                        data=json.dumps(shown, indent=2),
+                        file_name="all_logs.json",
+                        mime="application/json",
+                    )
+            except Exception as e:
+                st.error(
+                    f"Couldn't render the log table ({e}). The raw log file "
+                    "on disk is untouched -- this is just a display issue."
                 )
         else:
             st.error("Incorrect password.")
