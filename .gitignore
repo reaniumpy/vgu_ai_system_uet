@@ -12,8 +12,13 @@ models/
 *.safetensors
 *.bin
 
-# Local secrets (API keys for a future --call-model step)
+# Local secrets (API keys for a future --call-model step, admin password)
 .env
+.streamlit/secrets.toml
+
+# Interview-mode logs -- may contain real uploaded resume/contract text,
+# never committed
+logs/
 
 # Per-developer Claude Code permission settings, not shared config
 .claude/settings.local.json

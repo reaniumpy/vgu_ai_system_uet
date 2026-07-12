@@ -101,11 +101,10 @@ def main():
 
         print(f"\n----  GUARDRAIL SCAN ({guardrail.MODEL_NAME})  ----")
         result = guardrail.check(content)
-        verdict = "BLOCKED (injection detected)" if result.blocked else "ALLOWED (looks safe)"
         print(f"Scanned: external {scenario.content_label} content (before it reaches the model)")
         print(f"Label:   {result.label}")
         print(f"Score:   {result.score:.6f}")
-        print(f"Verdict: {verdict}")
+        print(f"Verdict: {scenario.blocked_message if result.blocked else scenario.safe_message}")
 
 
 if __name__ == "__main__":

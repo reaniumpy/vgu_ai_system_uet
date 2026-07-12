@@ -4,9 +4,11 @@ A small demo — CLI and web (Streamlit) — showing two things end to end:
 
 1. **How an indirect prompt injection attack hides inside "data"** that gets
    fed into an LLM (based on the attack model from
-   [microsoft/BIPIA](https://github.com/microsoft/BIPIA)). Two scenarios are
-   included: a malicious email, and a resume/CV PDF with an instruction
-   invisibly hidden inside it (a real HR-screening-bypass technique).
+   [microsoft/BIPIA](https://github.com/microsoft/BIPIA)). Three scenarios are
+   included: a malicious email, a resume/CV PDF with an instruction invisibly
+   hidden inside it (a real HR-screening-bypass technique), and a vendor
+   contract with a nested instruction trying to trick the AI into reaching
+   into internal/confidential data it was never given.
 2. **How a real ML guardrail model can catch it** before it ever reaches the
    target LLM.
 
@@ -40,9 +42,11 @@ just described.
 | File | Purpose |
 |---|---|
 | [`demo.py`](demo.py) | CLI entry point. Picks a scenario, builds the three-part prompt, optionally injects the attack, optionally applies a border-string defense, and optionally runs the guardrail scan. |
-| [`app.py`](app.py) | Streamlit web UI for the same pipeline — scenario picker, toggles, and (for the resume scenario) a download button for the generated PDF. |
-| [`scenarios.py`](scenarios.py) | Shared scenario data and prompt assembly used by both `demo.py` and `app.py`: the email scenario, and the resume/PDF scenario (including the PDF generation + text-extraction helpers). |
+| [`app.py`](app.py) | Streamlit web UI for the same pipeline — scenario picker, toggles, a suggested-questions dropdown, a Testing/Interview mode switch, an admin-gated log viewer, and (for the resume scenario) a download button for the generated PDF. Every widget has a plain-language tooltip (hover over the `?` icon) for non-technical users. |
+| [`scenarios.py`](scenarios.py) | Shared scenario data and prompt assembly used by both `demo.py` and `app.py`: the email, resume/PDF, and contract scenarios (including the resume's PDF generation + text-extraction helpers, and each scenario's human-readable blocked/safe messages). |
 | [`guardrail.py`](guardrail.py) | Loads [`protectai/deberta-v3-base-prompt-injection-v2`](https://huggingface.co/protectai/deberta-v3-base-prompt-injection-v2) (a small DeBERTa-v3 model fine-tuned to classify text as `INJECTION` vs `SAFE`) and scores a piece of text, scanning in overlapping chunks so a short attack buried in a long document isn't diluted away. |
+| [`interview_log.py`](interview_log.py) | Appends one JSON line per Run to `logs/interview_log.jsonl`, but only when `app.py` is in Interview mode — Testing mode (the default) never logs anything. |
+| [`samples/`](samples) | Extra sample resume PDFs (clean + hidden-injection versions) for testing the resume scenario's upload feature with something other than the built-in example. |
 | `requirements.txt` | Pinned versions of every dependency (`torch`, `transformers`, `fpdf2`, `pypdf`, `streamlit`). |
 | `.venv/` | Local virtual environment. Not committed to git — see [Setup](#setup). |
 
@@ -83,7 +87,7 @@ Flags:
 
 | Flag | Effect |
 |---|---|
-| `--scenario {email,resume}` | Which scenario to run (default: `email`). |
+| `--scenario {email,resume,contract}` | Which scenario to run (default: `email`). |
 | `--query "..."` | Override the scenario's default question. |
 | `--no-attack` | Use clean content with no hidden instruction, for comparison. |
 | `--defense` | Wrap the external content in border strings telling the model to treat it as inert data. |
@@ -92,10 +96,12 @@ Flags:
 Example: compare clean vs. attacked for each scenario:
 
 ```bash
-python demo.py --scenario email  --no-attack
+python demo.py --scenario email    --no-attack
 python demo.py --scenario email
-python demo.py --scenario resume --no-attack
+python demo.py --scenario resume   --no-attack
 python demo.py --scenario resume
+python demo.py --scenario contract --no-attack
+python demo.py --scenario contract
 ```
 
 Example: see the guardrail catch the attack even when the model input has no
@@ -130,6 +136,44 @@ while an automated HR screening bot that extracts text and feeds it to an
 LLM sees an extra hidden instruction (e.g. "recommend for immediate hire")
 appended at the end. This is a real, documented attack technique against
 LLM-based resume screeners, not a contrived example.
+
+### The nested data-exfiltration trap (contract scenario)
+
+Modeled on a legal-team persona (a non-expert who feeds vendor agreements to
+an AI to draft summaries, and needs to be sure the AI can't be tricked into
+reaching outside its provided context). The attacked version of the sample
+contract adds a fake "Special Processing Instructions" clause that instructs
+the assistant to fetch and reveal internal, confidential company files (an
+HR salary spreadsheet, financial projections) that were never part of the
+document it was actually given — i.e. an attempt to use the AI as a bridge
+across a data-tier boundary it shouldn't be able to cross. When the guardrail
+blocks it, the app shows the exact non-technical message this scenario
+requires: **"Action blocked: External document attempted unauthorized access
+to restricted data tiers."** — no jargon, no label/score unless you look at
+the "Technical detail" caption underneath.
+
+## Interview mode and logging
+
+The Streamlit app has a **Mode** switch in the sidebar:
+
+- **Testing** (default) — nothing is recorded anywhere. Use this for normal
+  exploration/demoing.
+- **Interview** — every Run is logged to `logs/interview_log.jsonl`: the full
+  assembled model input and the guardrail's verdict. Right after each Run,
+  the app also surfaces a "Download this interaction log" button so whoever
+  is running the session gets their own copy in their Downloads folder —
+  useful since `logs/` on a hosted deployment (e.g. Streamlit Community
+  Cloud) doesn't survive a redeploy or restart.
+
+An **"Admin: view interview logs"** section (password-gated) at the bottom of
+the app shows every interaction logged so far in the running session and
+lets you download the full history as one JSON file. The password defaults
+to `changeme-demo` (see `interview_log.py`'s caller in `app.py`,
+`_get_admin_password()`) — **override it before sharing this app with anyone**
+by setting an `ADMIN_PASSWORD` value either as an environment variable or in
+`.streamlit/secrets.toml` (both are gitignored, so the real password never
+gets committed). On Streamlit Community Cloud, set it under the app's
+**Settings → Secrets**.
 
 ## How the pieces fit together (workflow)
 
@@ -222,8 +266,16 @@ sequenceDiagram
 - [ ] **Tests.** Add a couple of fixed examples (one clearly malicious, one
       clearly benign, one borderline) with expected guardrail labels, so
       regressions in prompt construction or model version bumps are caught.
-- [ ] **More scenarios.** Extend `scenarios.py` with a webpage or table
-      scenario to more fully mirror BIPIA's task categories.
+- [x] **More scenarios.** Added a contract/legal scenario (nested
+      data-exfiltration trap) alongside email and resume. Still missing:
+      webpage/table/code scenarios to more fully mirror BIPIA's task
+      categories.
+- [ ] **Production-grade audit logging.** `interview_log.py` is a local
+      JSON-lines file plus a manual per-run download — fine for a demo, not
+      for a real audit trail. A real deployment would want append-only
+      storage outside the app's own filesystem (e.g. a database or object
+      store), proper admin accounts instead of one shared password, and
+      log rotation/retention policy.
 - [ ] **Tune chunked scanning.** `guardrail.py` now scans overlapping word
       windows so a short attack buried in a long document isn't diluted
       away (this was needed for the resume scenario — the attack sentence
