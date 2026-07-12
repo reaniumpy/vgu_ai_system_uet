@@ -15,5 +15,8 @@ models/
 # Local secrets (API keys for a future --call-model step)
 .env
 
+# Per-developer Claude Code permission settings, not shared config
+.claude/settings.local.json
+
 # OS cruft
 .DS_Store

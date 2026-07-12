@@ -34,7 +34,33 @@ class GuardrailResult:
         return self.label == "INJECTION"
 
 
-def check(text: str) -> GuardrailResult:
+def check(text: str, chunk_size: int = 60, stride: int = 30) -> GuardrailResult:
+    """Scan text for prompt injection.
+
+    A short attack sentence buried inside a long, mostly-benign document
+    (e.g. one line hidden in a full resume) can get diluted by the
+    classifier's whole-sequence pooling and score as SAFE, even though
+    that same sentence alone scores as a confident INJECTION. To catch
+    this, scan in overlapping word windows and flag the whole text if
+    any window trips the detector -- the same chunked-scanning approach
+    real content-scanning guardrails use on long documents.
+    """
     clf = _get_classifier()
-    result = clf(text, truncation=True)[0]
-    return GuardrailResult(label=result["label"], score=result["score"])
+    words = text.split()
+
+    if len(words) <= chunk_size:
+        chunks = [text]
+    else:
+        chunks = []
+        step = chunk_size - stride
+        for start in range(0, len(words), step):
+            chunks.append(" ".join(words[start : start + chunk_size]))
+            if start + chunk_size >= len(words):
+                break
+
+    results = [clf(chunk, truncation=True)[0] for chunk in chunks]
+    injections = [r for r in results if r["label"] == "INJECTION"]
+    worst = max(injections, key=lambda r: r["score"]) if injections else min(
+        results, key=lambda r: r["score"]
+    )
+    return GuardrailResult(label=worst["label"], score=worst["score"])

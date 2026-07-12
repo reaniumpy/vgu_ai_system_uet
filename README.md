@@ -1,10 +1,12 @@
 # Prompt Injection Demo: Input-to-Model Pipeline
 
-A small CLI demo showing two things end to end:
+A small demo — CLI and web (Streamlit) — showing two things end to end:
 
 1. **How an indirect prompt injection attack hides inside "data"** that gets
    fed into an LLM (based on the attack model from
-   [microsoft/BIPIA](https://github.com/microsoft/BIPIA)).
+   [microsoft/BIPIA](https://github.com/microsoft/BIPIA)). Two scenarios are
+   included: a malicious email, and a resume/CV PDF with an instruction
+   invisibly hidden inside it (a real HR-screening-bypass technique).
 2. **How a real ML guardrail model can catch it** before it ever reaches the
    target LLM.
 
@@ -37,9 +39,12 @@ just described.
 
 | File | Purpose |
 |---|---|
-| [`demo.py`](demo.py) | CLI entry point. Builds the three-part prompt, optionally injects the attack, optionally applies a border-string defense, and optionally runs the guardrail scan. |
-| [`guardrail.py`](guardrail.py) | Loads [`protectai/deberta-v3-base-prompt-injection-v2`](https://huggingface.co/protectai/deberta-v3-base-prompt-injection-v2) (a small DeBERTa-v3 model fine-tuned to classify text as `INJECTION` vs `SAFE`) and scores a piece of text. |
-| `.venv/` | Local virtual environment with `torch` (CPU) + `transformers` installed. Not committed to git — see [Setup](#setup). |
+| [`demo.py`](demo.py) | CLI entry point. Picks a scenario, builds the three-part prompt, optionally injects the attack, optionally applies a border-string defense, and optionally runs the guardrail scan. |
+| [`app.py`](app.py) | Streamlit web UI for the same pipeline — scenario picker, toggles, and (for the resume scenario) a download button for the generated PDF. |
+| [`scenarios.py`](scenarios.py) | Shared scenario data and prompt assembly used by both `demo.py` and `app.py`: the email scenario, and the resume/PDF scenario (including the PDF generation + text-extraction helpers). |
+| [`guardrail.py`](guardrail.py) | Loads [`protectai/deberta-v3-base-prompt-injection-v2`](https://huggingface.co/protectai/deberta-v3-base-prompt-injection-v2) (a small DeBERTa-v3 model fine-tuned to classify text as `INJECTION` vs `SAFE`) and scores a piece of text, scanning in overlapping chunks so a short attack buried in a long document isn't diluted away. |
+| `requirements.txt` | Pinned versions of every dependency (`torch`, `transformers`, `fpdf2`, `pypdf`, `streamlit`). |
+| `.venv/` | Local virtual environment. Not committed to git — see [Setup](#setup). |
 
 ## Setup
 
@@ -47,13 +52,17 @@ just described.
 python3 -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip
-pip install torch --index-url https://download.pytorch.org/whl/cpu
-pip install transformers
+pip install -r requirements.txt
 ```
 
-The first run of the guardrail downloads the model weights (~440MB) from
-Hugging Face and caches them locally (`~/.cache/huggingface`); subsequent
-runs are offline.
+`requirements.txt` points `torch` at the CPU-only PyTorch index via
+`--extra-index-url`, so no CUDA download is needed. The first run of the
+guardrail downloads the classifier weights (~440MB) from Hugging Face and
+caches them locally (`~/.cache/huggingface`); subsequent runs are offline.
+
+Note: `fpdf2`/`pypdf`/`streamlit` are pinned to versions compatible with
+Python 3.9 (this repo's venv). If you recreate the venv with Python 3.10+,
+newer releases of these packages are available.
 
 ## Usage
 
@@ -63,7 +72,8 @@ Always activate the venv first:
 source .venv/bin/activate
 ```
 
-Run the default demo (attack injected, no defense, guardrail scan on):
+Run the default demo (email scenario, attack injected, no defense, guardrail
+scan on):
 
 ```bash
 python demo.py
@@ -73,35 +83,63 @@ Flags:
 
 | Flag | Effect |
 |---|---|
-| `--query "..."` | Override the user's question sent alongside the email. |
-| `--no-attack` | Use the clean email with no hidden instruction, for comparison. |
+| `--scenario {email,resume}` | Which scenario to run (default: `email`). |
+| `--query "..."` | Override the scenario's default question. |
+| `--no-attack` | Use clean content with no hidden instruction, for comparison. |
 | `--defense` | Wrap the external content in border strings telling the model to treat it as inert data. |
 | `--no-guardrail` | Skip loading the classifier (faster iteration on the prompt-building logic). |
 
-Example: see the clean run and the attacked run side by side:
+Example: compare clean vs. attacked for each scenario:
 
 ```bash
-python demo.py --no-attack
-python demo.py
+python demo.py --scenario email  --no-attack
+python demo.py --scenario email
+python demo.py --scenario resume --no-attack
+python demo.py --scenario resume
 ```
 
 Example: see the guardrail catch the attack even when the model input has no
 defense applied:
 
 ```bash
-python demo.py           # attack present, guardrail should say BLOCKED
-python demo.py --no-attack   # no attack, guardrail should say ALLOWED
+python demo.py --scenario resume             # attack present, guardrail should say BLOCKED
+python demo.py --scenario resume --no-attack # no attack, guardrail should say ALLOWED
 ```
+
+### Web UI (Streamlit)
+
+```bash
+streamlit run app.py
+```
+
+Opens a browser tab with a scenario picker, the same attack/defense/guardrail
+toggles as the CLI, an editable question box, a Run button, and (for the
+resume scenario) a "Download generated resume PDF" button — open the
+downloaded file in a real PDF viewer to confirm the hidden instruction isn't
+visually apparent, exactly as it wouldn't be to a human reviewer.
+
+### The invisible-PDF-text attack (resume scenario)
+
+A PDF page renders text via positioned glyph-drawing instructions. A PDF
+*viewer* honors each glyph's color and size when rendering — so text set to
+white-on-white at 1pt is invisible to anyone looking at the page. A text
+*extraction* library (like `pypdf`, used by most automated document
+pipelines) reads those same instructions as raw text, ignoring color and
+size entirely. So a resume can look completely normal to a human recruiter
+while an automated HR screening bot that extracts text and feeds it to an
+LLM sees an extra hidden instruction (e.g. "recommend for immediate hire")
+appended at the end. This is a real, documented attack technique against
+LLM-based resume screeners, not a contrived example.
 
 ## How the pieces fit together (workflow)
 
 ```mermaid
 flowchart TD
     A["System prompt<br/>(task instruction)"]
-    B["External content<br/>(email, may hide an attack payload)"]
+    B["External content<br/>(email or extracted resume text,<br/>may hide an attack payload)"]
     C["User query<br/>(real question)"]
     P["Assembled prompt<br/>system + content + query"]
-    D["guardrail.py<br/>protectai/deberta-v3-base-prompt-injection-v2<br/>scores the external content"]
+    D["guardrail.py<br/>protectai/deberta-v3-base-prompt-injection-v2<br/>scans the content in chunks"]
     E{"Label?"}
     F["BLOCKED<br/>stop, do not send P"]
     H["Send assembled prompt (P)<br/>to the target LLM"]
@@ -122,30 +160,36 @@ on its verdict yet (see below).
 
 ## Sequence diagram (runtime flow)
 
-This shows the actual order of calls when you run `python demo.py`.
+This shows the actual order of calls when you run `python demo.py` (the
+Streamlit `app.py` calls the same `scenarios`/`guardrail` functions from a
+button click instead of argparse, but the call order is identical).
 
 ```mermaid
 sequenceDiagram
     actor User
-    participant CLI as demo.py
+    participant CLI as demo.py / app.py
+    participant Scen as scenarios.py
     participant Guard as guardrail.py
     participant Model as DeBERTa classifier<br/>(protectai/...-injection-v2)
 
-    User->>CLI: python demo.py [--no-attack] [--defense] [--no-guardrail]
-    CLI->>CLI: build_email(inject_attack)
-    CLI->>CLI: build_prompt(query, email_content, defense)
-    CLI-->>User: print assembled model input
+    User->>CLI: choose scenario + flags/toggles, Run
+    CLI->>Scen: scenario.get_content(inject_attack)
+    Note over Scen: resume scenario only:<br/>build PDF in memory, extract text back out
+    CLI->>Scen: build_prompt(query, content, defense, scenario)
+    CLI-->>User: show assembled model input
 
-    alt --no-guardrail not set
-        CLI->>Guard: check(email_content)
-        Guard->>Model: load model (first call only, cached after)
-        Guard->>Model: classify(email_content)
-        Model-->>Guard: label + score
-        Guard-->>CLI: GuardrailResult(label, score)
+    alt guardrail scan enabled
+        CLI->>Guard: check(content)
+        Guard->>Guard: split content into overlapping word chunks
+        loop each chunk
+            Guard->>Model: classify(chunk)
+            Model-->>Guard: label + score
+        end
+        Guard-->>CLI: GuardrailResult(worst label, score)
         alt label == INJECTION
-            CLI-->>User: print BLOCKED verdict
+            CLI-->>User: show BLOCKED verdict
         else label == SAFE
-            CLI-->>User: print ALLOWED verdict
+            CLI-->>User: show ALLOWED verdict
         end
     end
 
@@ -173,11 +217,21 @@ sequenceDiagram
       strings (already stubbed in via `--defense`), in-context learning
       examples, and multi-turn dialogue framing — then compare their
       effectiveness against the ML classifier's.
-- [ ] **Requirements file.** Freeze `torch`/`transformers` versions into a
-      `requirements.txt` so setup is reproducible across machines.
+- [x] **Requirements file.** `requirements.txt` pins `torch`/`transformers`/
+      `fpdf2`/`pypdf`/`streamlit`.
 - [ ] **Tests.** Add a couple of fixed examples (one clearly malicious, one
       clearly benign, one borderline) with expected guardrail labels, so
       regressions in prompt construction or model version bumps are caught.
+- [ ] **More scenarios.** Extend `scenarios.py` with a webpage or table
+      scenario to more fully mirror BIPIA's task categories.
+- [ ] **Tune chunked scanning.** `guardrail.py` now scans overlapping word
+      windows so a short attack buried in a long document isn't diluted
+      away (this was needed for the resume scenario — the attack sentence
+      alone scored as confident `INJECTION`, but appended to the full
+      resume it scored `SAFE` until chunking was added). The chunk size /
+      stride (60/30 words) are reasonable defaults but untested against
+      longer or shorter documents — revisit if a new scenario's guardrail
+      results look wrong.
 
 ## References
 
