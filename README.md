@@ -185,7 +185,14 @@ you don't have to re-enter it.
   instead, `llm_client.override_refusal()` forces it to reply with exactly
   *"You are currently violating our policy by having: {reason}."* You'll
   also see the detected risk percentage for every message, whether or not
-  anything was flagged.
+  anything was flagged. When a turn is blocked, both the chat UI and the
+  Scenario Tester's verdict show a **"Hidden instruction detected:"** box
+  with the actual flagged text (`guardrail.check()`'s `flagged_text` —
+  the specific chunk of content that tripped the classifier) — not just a
+  label and a score — so end users and admins can see exactly what was
+  caught, not only that something was. It's also saved in every logged
+  entry (`flagged_text` field, both in the download buttons and the Admin
+  tab's log).
 - **Off**: nothing is scanned — see what an unprotected tool-calling agent
   would do with the same input.
 
@@ -203,9 +210,6 @@ injection test: try attaching a PDF containing the DB-call-injection
 example from `samples/prompt_injection_techniques.txt`, with the gateway
 off, and see whether the agent actually calls
 `get_user_sensitive_data` because a document told it to.
-
-An expander above the chat box has a few ready-to-copy example attacks from
-the techniques reference file.
 
 **Loading indicators**: both the Scenario Tester's Run button and every
 Chat turn wrap their guardrail scan and LLM call in `st.spinner(...)`, so

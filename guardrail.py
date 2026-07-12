@@ -28,6 +28,7 @@ def _get_classifier():
 class GuardrailResult:
     label: str
     score: float
+    flagged_text: str
 
     @property
     def blocked(self) -> bool:
@@ -51,6 +52,10 @@ def check(text: str, chunk_size: int = 60, stride: int = 30) -> GuardrailResult:
     this, scan in overlapping word windows and flag the whole text if
     any window trips the detector -- the same chunked-scanning approach
     real content-scanning guardrails use on long documents.
+
+    The winning chunk's own text is returned as flagged_text, so callers
+    can show end users and admins exactly what looked like a hidden
+    instruction, not just a label and a score.
     """
     clf = _get_classifier()
     words = text.split()
@@ -65,9 +70,11 @@ def check(text: str, chunk_size: int = 60, stride: int = 30) -> GuardrailResult:
             if start + chunk_size >= len(words):
                 break
 
-    results = [clf(chunk, truncation=True)[0] for chunk in chunks]
-    injections = [r for r in results if r["label"] == "INJECTION"]
-    worst = max(injections, key=lambda r: r["score"]) if injections else min(
-        results, key=lambda r: r["score"]
+    scored = [(chunk, clf(chunk, truncation=True)[0]) for chunk in chunks]
+    injections = [(chunk, r) for chunk, r in scored if r["label"] == "INJECTION"]
+    chunk, worst = (
+        max(injections, key=lambda cr: cr[1]["score"])
+        if injections
+        else min(scored, key=lambda cr: cr[1]["score"])
     )
-    return GuardrailResult(label=worst["label"], score=worst["score"])
+    return GuardrailResult(label=worst["label"], score=worst["score"], flagged_text=chunk)

@@ -105,6 +105,8 @@ def main():
         print(f"Label:   {result.label}")
         print(f"Score:   {result.score:.6f}")
         print(f"Verdict: {scenario.blocked_message if result.blocked else scenario.safe_message}")
+        if result.blocked:
+            print(f"Flagged text: {result.flagged_text}")
 
 
 if __name__ == "__main__":
