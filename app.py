@@ -48,55 +48,7 @@ def _flatten_for_table(entries):
     return flat
 
 
-st.set_page_config(page_title="Prompt Injection Demo", layout="wide")
-st.title("Indirect Prompt Injection Demo")
-st.caption(
-    "How a hidden instruction inside external content can hijack an LLM, "
-    "and how a real ML guardrail can catch it first."
-)
-
-with st.sidebar:
-    st.caption(
-        "🪵 Every Scenario Tester run and every Chat turn is logged "
-        "automatically (for research/audit purposes). Download your own "
-        "logs directly in each tab, or view everything logged so far under "
-        "the 🔒 Admin tab (password required)."
-    )
-
-    st.divider()
-    st.caption("Chat tab settings")
-    if not llm_client.get_configured_api_key():
-        st.text_input(
-            "OpenAI API key",
-            type="password",
-            key="manual_openai_key",
-            help=(
-                "Paste your OpenAI API key here to use the Chat tab. It's "
-                "kept only in this browser session's memory -- never saved "
-                "to disk, logs, or git."
-            ),
-        )
-    gateway_on = st.toggle(
-        "Gateway Guardrail (Chat tab)",
-        value=True,
-        key="gateway_toggle",
-        help=(
-            "On: every chat message and any attached PDF is scanned by a "
-            "security AI before reaching the assistant. If it looks like a "
-            "hidden instruction, the assistant will refuse and tell you so "
-            "instead of following it, and you'll see the detected risk "
-            "percentage for every message -- even when nothing is wrong. "
-            "Off: skip scanning entirely, to see what an unprotected "
-            "assistant would do."
-        ),
-    )
-
-tab_tester, tab_chat, tab_admin = st.tabs(["🧪 Scenario Tester", "💬 Chat", "🔒 Admin"])
-
-# ==========================================================================
-# Tab 1: Scenario Tester (email / resume / contract)
-# ==========================================================================
-with tab_tester:
+def _render_scenario_tester_tab():
     scenario_key = st.selectbox(
         "Scenario",
         options=list(SCENARIOS),
@@ -273,10 +225,8 @@ with tab_tester:
             help="Saves exactly what was scanned and decided for this one Run to your Downloads folder.",
         )
 
-# ==========================================================================
-# Tab 2: Chat -- real OpenAI model, tool-calling agent, gateway guardrail
-# ==========================================================================
-with tab_chat:
+
+def _render_chat_tab(gateway_on):
     st.caption(
         "A small internal-assistant demo with tool access to a fake employee "
         "directory. Attach a PDF (only PDFs are accepted) to test whether a "
@@ -456,10 +406,8 @@ with tab_chat:
             interview_log.log_interaction(log_entry)
         st.rerun()
 
-# ==========================================================================
-# Tab 3: Admin -- password-gated view of every logged interaction
-# ==========================================================================
-with tab_admin:
+
+def _render_admin_tab():
     st.caption(
         "Requires the admin password. Shows every Scenario Tester run and "
         "every Chat turn logged since this server last restarted."
@@ -469,31 +417,100 @@ with tab_admin:
         type="password",
         help="Ask your administrator for this password. It protects the logged input/output history.",
     )
-    if admin_password:
-        if admin_password == _get_admin_password():
-            try:
-                logs = interview_log.read_logs()
-                if not logs:
-                    st.info("No interactions have been logged yet.")
-                else:
-                    type_filter = st.selectbox(
-                        "Filter by type",
-                        ["All", "scenario_tester", "chat_turn"],
-                        help="Narrow the table to just Scenario Tester runs or just Chat turns.",
-                    )
-                    shown = logs if type_filter == "All" else [l for l in logs if l.get("type") == type_filter]
-                    st.success(f"{len(shown)} logged interaction(s) (of {len(logs)} total).")
-                    st.dataframe(_flatten_for_table(shown), width="stretch")
-                    st.download_button(
-                        "⬇️ Download all logs (JSON)",
-                        data=json.dumps(shown, indent=2),
-                        file_name="all_logs.json",
-                        mime="application/json",
-                    )
-            except Exception as e:
-                st.error(
-                    f"Couldn't render the log table ({e}). The raw log file "
-                    "on disk is untouched -- this is just a display issue."
-                )
-        else:
-            st.error("Incorrect password.")
+    if not admin_password:
+        return
+    if admin_password != _get_admin_password():
+        st.error("Incorrect password.")
+        return
+
+    logs = interview_log.read_logs()
+    if not logs:
+        st.info("No interactions have been logged yet.")
+        return
+
+    type_filter = st.selectbox(
+        "Filter by type",
+        ["All", "scenario_tester", "chat_turn"],
+        help="Narrow the table to just Scenario Tester runs or just Chat turns.",
+    )
+    shown = logs if type_filter == "All" else [l for l in logs if l.get("type") == type_filter]
+    st.success(f"{len(shown)} logged interaction(s) (of {len(logs)} total).")
+
+    try:
+        st.dataframe(_flatten_for_table(shown), width="stretch")
+    except Exception as e:
+        st.error(f"Couldn't render the log table ({e}). Use the download button below instead.")
+
+    try:
+        st.download_button(
+            "⬇️ Download all logs (JSON)",
+            data=json.dumps(shown, indent=2, default=str),
+            file_name="all_logs.json",
+            mime="application/json",
+        )
+    except Exception as e:
+        st.error(f"Couldn't prepare the download ({e}). The raw log file on disk is untouched.")
+
+
+st.set_page_config(page_title="Prompt Injection Demo", layout="wide")
+st.title("Indirect Prompt Injection Demo")
+st.caption(
+    "How a hidden instruction inside external content can hijack an LLM, "
+    "and how a real ML guardrail can catch it first."
+)
+
+with st.sidebar:
+    st.caption(
+        "🪵 Every Scenario Tester run and every Chat turn is logged "
+        "automatically (for research/audit purposes). Download your own "
+        "logs directly in each tab, or view everything logged so far under "
+        "the 🔒 Admin tab (password required)."
+    )
+
+    st.divider()
+    st.caption("Chat tab settings")
+    if not llm_client.get_configured_api_key():
+        st.text_input(
+            "OpenAI API key",
+            type="password",
+            key="manual_openai_key",
+            help=(
+                "Paste your OpenAI API key here to use the Chat tab. It's "
+                "kept only in this browser session's memory -- never saved "
+                "to disk, logs, or git."
+            ),
+        )
+    gateway_on = st.toggle(
+        "Gateway Guardrail (Chat tab)",
+        value=True,
+        key="gateway_toggle",
+        help=(
+            "On: every chat message and any attached PDF is scanned by a "
+            "security AI before reaching the assistant. If it looks like a "
+            "hidden instruction, the assistant will refuse and tell you so "
+            "instead of following it, and you'll see the detected risk "
+            "percentage for every message -- even when nothing is wrong. "
+            "Off: skip scanning entirely, to see what an unprotected "
+            "assistant would do."
+        ),
+    )
+
+tab_tester, tab_chat, tab_admin = st.tabs(["🧪 Scenario Tester", "💬 Chat", "🔒 Admin"])
+
+with tab_tester:
+    try:
+        _render_scenario_tester_tab()
+    except Exception as e:
+        st.error(f"Something went wrong in the Scenario Tester tab: {e}")
+
+with tab_chat:
+    try:
+        _render_chat_tab(gateway_on)
+    except Exception as e:
+        st.error(f"Something went wrong in the Chat tab: {e}")
+
+with tab_admin:
+    try:
+        _render_admin_tab()
+    except Exception as e:
+        st.error(f"Something went wrong in the Admin tab: {e}")
