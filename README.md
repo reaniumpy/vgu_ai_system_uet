@@ -46,12 +46,12 @@ just described.
 | File | Purpose |
 |---|---|
 | [`demo.py`](demo.py) | CLI entry point. Picks a scenario, builds the three-part prompt, optionally injects the attack, optionally applies a border-string defense, and optionally runs the guardrail scan. |
-| [`app.py`](app.py) | Streamlit web UI with two tabs: **Scenario Tester** (the CLI's pipeline, plus a Testing/Interview mode switch and an admin-gated log viewer) and **Chat** (a real OpenAI-backed chat agent with tool-calling and a gateway guardrail toggle). Every widget has a plain-language tooltip (hover the `?` icon) for non-technical users. |
+| [`app.py`](app.py) | Streamlit web UI with three tabs: **Scenario Tester** (the CLI's pipeline), **Chat** (a real OpenAI-backed chat agent with tool-calling and a gateway guardrail toggle), and **Admin** (password-gated viewer/downloader for everything logged in either tab). Every widget has a plain-language tooltip (hover the `?` icon) for non-technical users. |
 | [`scenarios.py`](scenarios.py) | Shared scenario data and prompt assembly used by both `demo.py` and `app.py`: the email, resume/PDF, and contract scenarios (including the resume's PDF generation + text-extraction helpers, and each scenario's human-readable blocked/safe messages). |
 | [`guardrail.py`](guardrail.py) | Loads [`protectai/deberta-v3-base-prompt-injection-v2`](https://huggingface.co/protectai/deberta-v3-base-prompt-injection-v2) (a small DeBERTa-v3 model fine-tuned to classify text as `INJECTION` vs `SAFE`) and scores a piece of text, scanning in overlapping chunks so a short attack buried in a long document isn't diluted away. |
 | [`llm_client.py`](llm_client.py) | The Chat tab's OpenAI client: a tool-calling chat loop (`chat_with_tools`) and the gateway's forced policy-violation response (`override_refusal`). Model: `gpt-3.5-turbo` — the oldest still-available, cheapest OpenAI chat model, which is plenty for this and still supports tool calling. |
 | [`tools.py`](tools.py) + [`data/`](data) | A mock "employee directory" tool-calling backend: `data/users.json` (10 fake users) and `data/tools.json` (the tool manifest) back four callable tools, one of them (`get_user_sensitive_data`) intentionally marked sensitive so you can red-team whether the agent can be tricked into calling it. |
-| [`interview_log.py`](interview_log.py) | Appends one JSON line per Scenario Tester Run to `logs/interview_log.jsonl`, but only when `app.py` is in Interview mode — Testing mode (the default) never logs anything. |
+| [`interview_log.py`](interview_log.py) | Appends one JSON line per Scenario Tester Run *and* per Chat turn to `logs/interview_log.jsonl` — logging is always on (no toggle), so every interaction across both tabs is captured for later review. |
 | [`samples/`](samples) | Extra sample resume PDFs (clean + hidden-injection versions), and [`prompt_injection_techniques.txt`](samples/prompt_injection_techniques.txt) — an educational reference of injection techniques (context-changing, hidden-in-documents, emoji/hex/Base64-encoded, poetic/role-play framing, DB-call injection, and more) to paste into the Chat tab. |
 | `requirements.txt` | Pinned versions of every dependency (`torch`, `transformers`, `fpdf2`, `pypdf`, `streamlit`, `openai`). |
 | `.venv/` | Local virtual environment. Not committed to git — see [Setup](#setup). |
@@ -207,28 +207,45 @@ off, and see whether the agent actually calls
 An expander above the chat box has a few ready-to-copy example attacks from
 the techniques reference file.
 
-## Interview mode and logging
+**Loading indicators**: both the Scenario Tester's Run button and every
+Chat turn wrap their guardrail scan and LLM call in `st.spinner(...)`, so
+you get an explicit "🔍 Scanning..." / "🤖 Thinking..." indicator with
+custom text in the page itself. Streamlit's own small top-right runner
+icon still appears during any script rerun too — that one's part of the
+framework and can't be removed — but the spinners are the clearer signal
+to watch for slow steps (model loading/scanning, the OpenAI call).
 
-The Streamlit app has a **Mode** switch in the sidebar:
+## Logging (always on) and the Admin tab
 
-- **Testing** (default) — nothing is recorded anywhere. Use this for normal
-  exploration/demoing.
-- **Interview** — every Run is logged to `logs/interview_log.jsonl`: the full
-  assembled model input and the guardrail's verdict. Right after each Run,
-  the app also surfaces a "Download this interaction log" button so whoever
-  is running the session gets their own copy in their Downloads folder —
-  useful since `logs/` on a hosted deployment (e.g. Streamlit Community
-  Cloud) doesn't survive a redeploy or restart.
+There's no mode toggle — every Scenario Tester run and every Chat turn is
+logged automatically, for research/audit/usability-study purposes:
 
-An **"Admin: view interview logs"** section (password-gated) at the bottom of
-the app shows every interaction logged so far in the running session and
-lets you download the full history as one JSON file. The password defaults
-to `changeme-demo` (see `interview_log.py`'s caller in `app.py`,
-`_get_admin_password()`) — **override it before sharing this app with anyone**
-by setting an `ADMIN_PASSWORD` value either as an environment variable or in
-`.streamlit/secrets.toml` (both are gitignored, so the real password never
-gets committed). On Streamlit Community Cloud, set it under the app's
-**Settings → Secrets**.
+- **Scenario Tester**: after clicking Run, a "⬇️ Download this run's log
+  (JSON)" button appears right under the verdict.
+- **Chat**: after every turn, a "⬇️ Download this chat log (JSON)" button
+  appears next to "Clear chat", covering the whole conversation so far —
+  every message, attached filenames, gateway risk scores, blocked
+  reasons, and tool calls made.
+
+Both also get appended server-side to `logs/interview_log.jsonl` (one JSON
+line per interaction, tagged `"type": "scenario_tester"` or
+`"type": "chat_turn"`), so nothing depends on someone remembering to click
+download.
+
+The **🔒 Admin** tab (password-gated) shows everything logged so far in the
+running session, with a type filter (All / Scenario Tester / Chat) and a
+"Download all logs" button for the full history. The password defaults to
+`changeme-demo` (see `_get_admin_password()` in `app.py`) — **override it
+before sharing this app with anyone** via an `ADMIN_PASSWORD` environment
+variable or `.streamlit/secrets.toml` (both gitignored, so the real
+password never gets committed). On Streamlit Community Cloud, set it under
+the app's **Settings → Secrets**.
+
+Note: `logs/` lives on the app server's local filesystem, which doesn't
+survive a redeploy or restart on a hosted platform like Streamlit
+Community Cloud — the per-interaction download buttons are the reliable
+way to keep a permanent copy; the Admin tab only shows what's accumulated
+since the server last restarted.
 
 ## How the pieces fit together (workflow)
 
@@ -353,9 +370,9 @@ sequenceDiagram
       Base64 before scoring. A real fix would need to detect and decode
       common encodings (Base64, hex, URL-encoding) before running the
       classifier on the decoded text too.
-- [ ] **Chat tab logging.** Unlike the Scenario Tester, Chat tab
-      conversations aren't logged anywhere (no Interview mode there yet) —
-      add that if you need an audit trail of Chat sessions too.
+- [x] **Chat tab logging.** Every Chat turn is now logged the same way as
+      Scenario Tester runs (see [Logging](#logging-always-on-and-the-admin-tab)
+      above), with a per-turn download button and an Admin-tab view.
 
 ## References
 
