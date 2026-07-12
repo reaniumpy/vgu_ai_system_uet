@@ -1,7 +1,7 @@
 """
 OpenAI chat client for the Chat tab, with tool-calling support against the
-mock database in tools.py, and an "override refusal" path used when the
-gateway guardrail flags a message as a likely prompt injection.
+mock database in agent_tools.py, and an "override refusal" path used when
+the gateway guardrail flags a message as a likely prompt injection.
 
 Model choice: gpt-3.5-turbo -- the oldest still-available, cheapest OpenAI
 chat model, which is plenty for this kind of daily agent-style task and
@@ -14,7 +14,7 @@ import os
 import streamlit as st
 from openai import OpenAI
 
-import tools as tools_module
+import agent_tools as tools_module
 
 MODEL = "gpt-3.5-turbo"
 
