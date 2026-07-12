@@ -8,19 +8,39 @@ external content before it reaches the target LLM.
 Model card: https://huggingface.co/protectai/deberta-v3-base-prompt-injection-v2
 """
 
+import os
+import threading
 from dataclasses import dataclass
+
+# Must be set before torch/transformers get imported (below, lazily, inside
+# _get_classifier): on CPU-constrained hosts like Streamlit Community
+# Cloud's free tier, PyTorch's default multi-threaded OpenMP/MKL BLAS
+# execution -- and HuggingFace tokenizers' own thread pool -- can segfault
+# the whole process on the very first inference call instead of failing
+# cleanly, if the host has fewer usable cores than PyTorch assumes. Forcing
+# single-threaded execution is the standard fix for exactly this failure
+# signature (works fine locally, segfaults on the constrained host, no
+# Python traceback -- the crash happens below the interpreter).
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("MKL_NUM_THREADS", "1")
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
 MODEL_NAME = "protectai/deberta-v3-base-prompt-injection-v2"
 
 _classifier = None
+_classifier_lock = threading.Lock()
 
 
 def _get_classifier():
     global _classifier
     if _classifier is None:
-        from transformers import pipeline
+        with _classifier_lock:
+            if _classifier is None:  # re-check: another thread may have won the race
+                import torch
+                from transformers import pipeline
 
-        _classifier = pipeline("text-classification", model=MODEL_NAME)
+                torch.set_num_threads(1)
+                _classifier = pipeline("text-classification", model=MODEL_NAME)
     return _classifier
 
 
