@@ -27,27 +27,6 @@ def _apply_suggested_query(query_key, choice_key):
         st.session_state[query_key] = choice
 
 
-def _flatten_for_table(entries):
-    """Make a list of log dicts safe for st.dataframe/Arrow serialization.
-
-    scenario_tester and chat_turn entries have very different shapes, and
-    chat_turn entries carry nested structures (tool_calls is a list of
-    dicts, whose own "result" can itself be a dict or list). Mixing all of
-    that into one pandas DataFrame can produce columns Arrow can't convert
-    on some pyarrow versions. JSON-stringifying any list/dict value keeps
-    every column a plain scalar, which is always safe to display.
-    """
-    flat = []
-    for entry in entries:
-        flat.append(
-            {
-                k: (json.dumps(v) if isinstance(v, (list, dict)) else v)
-                for k, v in entry.items()
-            }
-        )
-    return flat
-
-
 def _render_scenario_tester_tab():
     scenario_key = st.selectbox(
         "Scenario",
@@ -431,15 +410,10 @@ def _render_admin_tab():
     type_filter = st.selectbox(
         "Filter by type",
         ["All", "scenario_tester", "chat_turn"],
-        help="Narrow the table to just Scenario Tester runs or just Chat turns.",
+        help="Narrow the view to just Scenario Tester runs or just Chat turns.",
     )
     shown = logs if type_filter == "All" else [l for l in logs if l.get("type") == type_filter]
     st.success(f"{len(shown)} logged interaction(s) (of {len(logs)} total).")
-
-    try:
-        st.dataframe(_flatten_for_table(shown), width="stretch")
-    except Exception as e:
-        st.error(f"Couldn't render the log table ({e}). Use the download button below instead.")
 
     try:
         st.download_button(
@@ -450,6 +424,22 @@ def _render_admin_tab():
         )
     except Exception as e:
         st.error(f"Couldn't prepare the download ({e}). The raw log file on disk is untouched.")
+
+    if shown:
+        max_show = st.slider(
+            "Show most recent N entries on screen",
+            min_value=1,
+            max_value=len(shown),
+            value=min(20, len(shown)),
+            help=(
+                "Only affects what's rendered below -- the download button "
+                "above always includes every entry matching the filter."
+            ),
+        )
+        try:
+            st.json(list(reversed(shown))[:max_show])
+        except Exception as e:
+            st.error(f"Couldn't render the log preview ({e}). Use the download button above instead.")
 
 
 st.set_page_config(page_title="Prompt Injection Demo", layout="wide")
