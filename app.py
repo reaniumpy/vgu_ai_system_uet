@@ -426,16 +426,19 @@ def _render_admin_tab():
         st.error(f"Couldn't prepare the download ({e}). The raw log file on disk is untouched.")
 
     if shown:
-        max_show = st.slider(
-            "Show most recent N entries on screen",
-            min_value=1,
-            max_value=len(shown),
-            value=min(20, len(shown)),
-            help=(
-                "Only affects what's rendered below -- the download button "
-                "above always includes every entry matching the filter."
-            ),
-        )
+        if len(shown) > 1:
+            max_show = st.slider(
+                "Show most recent N entries on screen",
+                min_value=1,
+                max_value=len(shown),
+                value=min(20, len(shown)),
+                help=(
+                    "Only affects what's rendered below -- the download button "
+                    "above always includes every entry matching the filter."
+                ),
+            )
+        else:
+            max_show = 1
         try:
             st.json(list(reversed(shown))[:max_show])
         except Exception as e:
