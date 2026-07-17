@@ -1,58 +1,77 @@
-# Prompt Injection Demo
+# Aegis — a prompt-injection guard (clean slate)
 
-A CLI and Streamlit app demonstrating indirect prompt injection: hidden
-instructions inside documents (email, resume, contract) or chat messages,
-a real ML guardrail that detects them, and a real OpenAI-backed chat agent
-with tool-calling you can try to hijack.
+> Working codename: **Aegis** (rename freely). This branch (`simple`) is a deliberate reset: the
+> previous Streamlit implementation was scrapped so the product can be **designed fresh** and run on
+> **Docker**, without inheriting the old UI. The old app is preserved on the `main` branch if ever
+> needed. This file is the single source of truth for *what the product should achieve* — not how it
+> should look.
 
-## Structure
+---
 
-```
-demo.py               CLI entry point
-app.py                Streamlit app (Scenario Tester / Chat / Admin tabs)
-scenarios.py          Email, resume, and contract scenario definitions
-guardrail.py          ML prompt-injection classifier (protectai/deberta-v3-base-prompt-injection-v2)
-llm_client.py          OpenAI chat client for the Chat tab (tool-calling, override refusal)
-agent_tools.py         Mock tool-calling backend for the Chat tab's agent
-interview_log.py       Append-only logging for Scenario Tester runs and Chat turns
-data/
-  users.json           10 fake employee records (mock database)
-  tools.json            Tool manifest for the Chat tab's agent
-samples/
-  sample_resume_2_*.pdf         Extra sample CVs (clean + hidden-injection) for the upload feature
-  prompt_injection_techniques.txt   Educational reference of injection techniques
-requirements.txt        Pinned dependencies
-```
+## 1. The product goal (what it must achieve — deliberately UI-agnostic)
 
-Logs write to `logs/` at runtime (gitignored, not committed).
+A guard that sits **in front of an LLM** and catches **prompt-injection** — hidden or malicious
+instructions smuggled inside untrusted input (a document, a message, a pasted file) that try to
+hijack the model. The product should:
 
-## Setup
+1. **Detect** whether a given input contains a prompt-injection attempt (the model / engine's job).
+2. **Decide** clearly: let it through, or block it.
+3. **Explain the result to a non-expert** in plain language they can understand and act on —
+   *without* exposing raw model internals (scores, labels, tensors) as the primary message.
 
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install --upgrade pip
-pip install -r requirements.txt
-```
+The user is a **non-technical professional**, not an ML engineer. Success is measured by whether that
+person can *use* the product and trust its answer — i.e. by **usability**, not by model accuracy
+(model accuracy is a separate, technical question).
 
-Optional environment variables (set as env vars, or in `.streamlit/secrets.toml`):
+**Constraints:** runs on **Docker**; the framework/UI is an open design decision for the rebuild.
 
-| Variable | Purpose |
-|---|---|
-| `OPENAI_API_KEY` | Lets the Chat tab call OpenAI without prompting for a key each session. |
-| `ADMIN_PASSWORD` | Protects the Admin tab (defaults to `changeme-demo` — override before sharing). |
+## 2. Day 4 objective (the course deliverable)
 
-## Run locally
+Course **61BIS515 — Usability Evaluation and Testing** (VGU). **Day 4 = submit a report and present
+the findings of a usability-testing study.** So the product must be usable enough to run a real
+usability test on it: recruit ~5 non-expert users, give them realistic goal-based tasks, observe them
+via think-aloud, measure, and report findings + recommendations.
 
-```bash
-python demo.py --scenario {email,resume,contract}   # CLI
-streamlit run app.py                                 # Web app
-```
+## 3. What the UET course teaches (method, condensed)
 
-## Deploy (Streamlit Community Cloud)
+- **Usability = effectiveness · efficiency · satisfaction**, in a context of use (ISO 9241-11).
+- **Method:** moderated, task-based testing with a **concurrent think-aloud** protocol; combine
+  **quantitative** metrics (task-success rate, time-on-task, error rate) with **qualitative**
+  observation, plus standardized post-test questionnaires (**SUS**; single-task ease via **SEQ**).
+- **You only need ~5 users** per user group to surface most usability problems (Nielsen).
+- **Personas** frame *who* you test with (user characteristics, goals, context of use); **tasks must
+  be realistic, goal-oriented, and free of navigation hints** — describe *what the user wants to
+  achieve, not how to do it*.
+- **Analysis:** descriptive statistics (mean, median, range), compare against targets, never rely on
+  a single metric, and end with **actionable recommendations**.
 
-1. Push this repo to GitHub (public or private).
-2. Go to [share.streamlit.io](https://share.streamlit.io), sign in, and create a new app pointing at this repo, branch `main`, main file `app.py`.
-3. In **Advanced settings**, set the Python version to match `requirements.txt`'s pins (3.9–3.10 recommended).
-4. Under the app's **Settings → Secrets**, set `OPENAI_API_KEY` and `ADMIN_PASSWORD`.
-5. Deploy. If it ever crashes, use **Manage app → Reboot app** to force a clean restart.
+## 4. Quesenbery's 5 Es (usability *outcomes* to design for)
+
+1. **Effective** — users can complete their goal correctly.
+2. **Efficient** — they do it quickly, with little effort.
+3. **Engaging** — the interface is pleasant and holds attention appropriately.
+4. **Error-tolerant** — it prevents errors, and helps users recover when they happen.
+5. **Easy to learn** — first-time and returning users get going without training.
+
+## 5. Nielsen's 10 usability heuristics (design *rules* to check against)
+
+1. **Visibility of system status** — always show what's happening.
+2. **Match between system and the real world** — speak the user's language, not jargon.
+3. **User control and freedom** — easy undo / exit; no dead ends.
+4. **Consistency and standards** — follow platform and internal conventions.
+5. **Error prevention** — stop problems before they happen.
+6. **Recognition rather than recall** — make options visible; don't force memory.
+7. **Flexibility and efficiency of use** — accelerators for experts, simple path for novices.
+8. **Aesthetic and minimalist design** — no irrelevant clutter.
+9. **Help users recognize, diagnose, and recover from errors** — plain-language, constructive messages.
+10. **Help and documentation** — available and task-focused when needed.
+
+## 6. Requirements
+
+See `requirements.txt` — currently only the core detection-model dependencies. Extend it as the fresh
+Docker design takes shape.
+
+---
+
+*Report note: the course runs an AI-content check on submitted reports — write report/presentation
+prose in your own words.*
