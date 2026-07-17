@@ -4,7 +4,7 @@
 # Python bytecode/cache
 __pycache__/
 *.pyc
-
+.doc/
 # Downloaded model weights, if ever cached inside the repo instead of
 # the default ~/.cache/huggingface - guardrail.py downloads these on
 # demand the first time it runs, so they should never be committed.

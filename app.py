@@ -1,4 +1,10 @@
-"""Streamlit UI for the BIPIA-style indirect prompt injection demo."""
+"""Streamlit UI: Document Safety Check.
+
+The product a non-expert actually uses: pick a document, and it tells you --
+in plain language -- whether the document hides an instruction meant to hijack
+an AI assistant, before you ever hand it over. The injection-detection model
+(guardrail.py) is the engine inside; this app is the product around it.
+"""
 
 import json
 import os
@@ -11,7 +17,95 @@ import llm_client
 import scenarios
 from scenarios import SCENARIOS, build_prompt, build_resume_pdf
 
-CUSTOM_QUERY_LABEL = "Custom (write your own)"
+DOC_OPTIONS = {
+    "📄 Résumé": "resume",
+    "📃 Contract": "contract",
+    "✉️ Email": "email",
+}
+UPLOAD_OPTION = "⬆️ Upload my own"
+
+THEME_CSS = """
+<style>
+/* --- hide Streamlit chrome for a product-like feel --- */
+#MainMenu, footer {visibility: hidden;}
+[data-testid="stToolbar"], [data-testid="stDecoration"], [data-testid="stStatusWidget"] {display: none !important;}
+[data-testid="stHeader"] {background: transparent;}
+
+/* --- page rhythm --- */
+.block-container {padding-top: 2.2rem; padding-bottom: 3rem; max-width: 780px;}
+h3, h4 {letter-spacing: -0.01em;}
+
+/* --- brand header --- */
+.dsc-brand {display:flex; align-items:center; gap:.55rem; margin-bottom:.15rem;}
+.dsc-logo {font-size:1.75rem; line-height:1;}
+.dsc-name {font-size:1.5rem; font-weight:800; color:#0F172A;}
+.dsc-sub {color:#64748B; font-size:1rem; margin:.1rem 0 1.2rem 0;}
+
+/* --- "how it works" strip --- */
+.dsc-how {display:flex; align-items:stretch; gap:.4rem; background:#F8FAFC;
+  border:1px solid #E2E8F0; border-radius:14px; padding:1rem 1.15rem; margin:0 0 1.5rem 0;}
+.dsc-step {display:flex; align-items:center; gap:.7rem; flex:1;}
+.dsc-sico {font-size:1.55rem; line-height:1;}
+.dsc-stext {display:flex; flex-direction:column; line-height:1.25;}
+.dsc-snum {font-size:.66rem; font-weight:700; text-transform:uppercase; letter-spacing:.07em; color:#4F46E5;}
+.dsc-stext b {font-size:.92rem; color:#0F172A;}
+.dsc-stext span {font-size:.78rem; color:#64748B;}
+.dsc-arrow {display:flex; align-items:center; color:#CBD5E1; font-size:1.25rem; font-weight:800;}
+
+/* --- verdict banner --- */
+.dsc-verdict {border-radius:14px; padding:1.15rem 1.3rem; margin:.1rem 0 1rem 0; border:1px solid transparent;}
+.dsc-blocked {background:#FEF2F2; border-color:#FECACA; border-left:6px solid #DC2626;}
+.dsc-safe {background:#F0FDF4; border-color:#BBF7D0; border-left:6px solid #16A34A;}
+.dsc-vhead {display:flex; align-items:center; gap:.55rem;}
+.dsc-vico {font-size:1.45rem; line-height:1;}
+.dsc-vtitle {font-size:1.2rem; font-weight:800;}
+.dsc-blocked .dsc-vtitle {color:#B91C1C;}
+.dsc-safe .dsc-vtitle {color:#15803D;}
+.dsc-vbody {margin:.5rem 0 0 0; color:#334155; font-size:.96rem; line-height:1.5;}
+
+/* --- buttons --- */
+.stButton > button, .stDownloadButton > button {border-radius:10px; font-weight:600;}
+
+/* --- stack the strip on narrow screens --- */
+@media (max-width: 640px){
+  .dsc-how {flex-direction:column; gap:.7rem;}
+  .dsc-arrow {transform:rotate(90deg); justify-content:center;}
+}
+</style>
+"""
+
+HOW_IT_WORKS_HTML = """
+<div class="dsc-how">
+  <div class="dsc-step">
+    <div class="dsc-sico">📄</div>
+    <div class="dsc-stext"><div class="dsc-snum">Step 1</div><b>Pick a document</b><span>résumé, contract, or your own PDF</span></div>
+  </div>
+  <div class="dsc-arrow">→</div>
+  <div class="dsc-step">
+    <div class="dsc-sico">🛡️</div>
+    <div class="dsc-stext"><div class="dsc-snum">Step 2</div><b>We scan it</b><span>for hidden instructions</span></div>
+  </div>
+  <div class="dsc-arrow">→</div>
+  <div class="dsc-step">
+    <div class="dsc-sico">✅</div>
+    <div class="dsc-stext"><div class="dsc-snum">Step 3</div><b>Get a clear answer</b><span>safe, or blocked with the reason</span></div>
+  </div>
+</div>
+"""
+
+BLOCKED_BANNER_HTML = """
+<div class="dsc-verdict dsc-blocked">
+  <div class="dsc-vhead"><span class="dsc-vico">🛑</span><span class="dsc-vtitle">Don't send this to your AI</span></div>
+  <div class="dsc-vbody">This document hides an instruction &mdash; text you can't see, but the AI would read and obey. We stopped it before it could reach the AI.</div>
+</div>
+"""
+
+SAFE_BANNER_HTML = """
+<div class="dsc-verdict dsc-safe">
+  <div class="dsc-vhead"><span class="dsc-vico">✅</span><span class="dsc-vtitle">Safe to use</span></div>
+  <div class="dsc-vbody">We scanned this document and found no hidden instructions meant to trick the AI.</div>
+</div>
+"""
 
 
 def _get_admin_password() -> str:
@@ -21,187 +115,157 @@ def _get_admin_password() -> str:
         return os.environ.get("ADMIN_PASSWORD", "changeme-demo")
 
 
-def _apply_suggested_query(query_key, choice_key):
-    choice = st.session_state[choice_key]
-    if choice != CUSTOM_QUERY_LABEL:
-        st.session_state[query_key] = choice
+def _inject_theme_css():
+    st.markdown(THEME_CSS, unsafe_allow_html=True)
 
 
-def _render_scenario_tester_tab():
-    scenario_key = st.selectbox(
-        "Scenario",
-        options=list(SCENARIOS),
-        format_func=str.capitalize,
-        help=(
-            "Pick which kind of document the AI assistant will read: an email, "
-            "a job candidate's resume, or a vendor contract. Each one comes "
-            "with its own example of a hidden instruction attackers might try "
-            "to sneak in."
-        ),
+def _doc_caption(scenario_key, inject_attack):
+    names = {
+        "resume": "an applicant's résumé",
+        "contract": "a vendor contract",
+        "email": "a business email",
+    }
+    what = names.get(scenario_key, "a document")
+    if inject_attack:
+        return f"This is {what} a real user might receive. Press **Check** to see whether it's safe to hand to an AI."
+    return f"This is a clean version of {what}. Press **Check** to see what a 'safe' result looks like."
+
+
+def _render_safety_check_tab():
+    st.markdown(HOW_IT_WORKS_HTML, unsafe_allow_html=True)
+
+    st.markdown("#### 1&nbsp;·&nbsp;Choose a document to check")
+    labels = list(DOC_OPTIONS) + [UPLOAD_OPTION]
+    choice = st.segmented_control(
+        "Choose a document to check",
+        labels,
+        default=labels[0],
+        label_visibility="collapsed",
     )
-    scenario = SCENARIOS[scenario_key]
+    if choice is None:
+        choice = labels[0]
 
-    use_upload = False
+    use_upload = choice == UPLOAD_OPTION
     uploaded_content = None
+    scenario = None
+    scenario_key = None
+    inject_attack = True
 
-    if scenario_key == "resume":
-        use_upload = st.checkbox(
-            "Upload my own CV (PDF) instead of the sample",
+    if use_upload:
+        uploaded_file = st.file_uploader(
+            "Upload a PDF to check",
+            type=["pdf"],
+            help="Your file is only used for this check -- it is not stored anywhere by this app.",
+        )
+        if uploaded_file is not None:
+            uploaded_content = scenarios.extract_pdf_text(uploaded_file.getvalue())
+            with st.expander("Preview the text we read from your PDF"):
+                st.text(uploaded_content)
+    else:
+        scenario_key = DOC_OPTIONS[choice]
+        scenario = SCENARIOS[scenario_key]
+        show_clean = st.checkbox(
+            "Show me a clean version instead",
             help=(
-                "Check this to test a real resume file instead of the built-in "
-                "example. The system will read whatever is actually in your "
-                "file -- it won't add or remove anything."
+                "By default we show a tampered example so you can see a real "
+                "block. Tick this to check a harmless version and see a 'safe' "
+                "result instead."
             ),
         )
+        inject_attack = not show_clean
+        st.caption(_doc_caption(scenario_key, inject_attack))
 
-    col1, col2, col3 = st.columns(3)
-    inject_attack = col1.toggle(
-        "Inject attack",
-        value=True,
-        disabled=use_upload,
-        help=(
-            "On: the example document secretly contains a hidden instruction "
-            "trying to trick the AI. Off: a normal, harmless version of the "
-            "same document, for comparison."
-        ),
-    )
-    use_defense = col2.toggle(
-        "Border-string defense",
-        value=False,
-        help=(
-            "A simple safety wrapper that tells the AI in plain words: "
-            "'everything below this line is just data to read, not "
-            "instructions to follow.' It's a basic precaution, not a "
-            "guarantee -- the AI can still choose to ignore it."
-        ),
-    )
-    run_guardrail = col3.toggle(
-        "Run guardrail scan",
-        value=True,
-        help=(
-            "On: a dedicated security AI scans the document first and blocks "
-            "it if it looks like an attack, before it would ever reach the "
-            "main assistant. Off: skip that check, to see the raw document "
-            "unfiltered."
-        ),
-    )
-    if use_upload:
-        col1.caption("Ignored: the attack is whatever's actually in your uploaded file.")
-
-    query_key = f"query_{scenario_key}"
-    choice_key = f"suggestion_{scenario_key}"
-    st.session_state.setdefault(query_key, scenario.default_query)
-
-    st.selectbox(
-        "Suggested questions",
-        [CUSTOM_QUERY_LABEL] + scenario.suggested_queries,
-        key=choice_key,
-        on_change=_apply_suggested_query,
-        args=(query_key, choice_key),
-        help=(
-            "Quick example questions to try. Pick one to fill in the question "
-            "box below, then feel free to edit it -- or choose 'Custom' and "
-            "type your own question from scratch."
-        ),
-    )
-    query = st.text_input(
-        "Your question",
-        key=query_key,
-        help="The question a real user would ask the AI assistant about this document.",
-    )
-
-    if scenario_key == "resume":
-        if use_upload:
-            uploaded_file = st.file_uploader(
-                "Upload a CV/resume PDF",
-                type=["pdf"],
-                help="Your file is only used for this test run -- it is not stored anywhere by this app.",
-            )
-            if uploaded_file is not None:
-                uploaded_content = scenarios.extract_pdf_text(uploaded_file.getvalue())
-                with st.expander("Extracted text preview"):
-                    st.text(uploaded_content)
-        else:
-            pdf_bytes = build_resume_pdf(inject_attack)
-            st.download_button(
-                "Download generated resume PDF",
-                data=pdf_bytes,
-                file_name="resume_with_hidden_text.pdf" if inject_attack else "resume_clean.pdf",
-                mime="application/pdf",
-                help=(
-                    "Save this example PDF to your computer and open it in a normal "
-                    "PDF viewer -- if the attack is turned on, you won't see anything "
-                    "unusual, because the hidden instruction is invisible to human eyes."
-                ),
-            )
-            st.caption(
-                "Open this in a real PDF viewer -- if the attack is injected, the "
-                "hidden instruction is not visually apparent."
-            )
-
-    run_clicked = st.button(
-        "Run",
+    checked = st.button(
+        "🔍  Check this document",
         type="primary",
-        help="Send the document and your question through the pipeline and show the result below.",
+        use_container_width=True,
     )
 
-    if run_clicked:
+    if checked:
         if use_upload and uploaded_content is None:
-            st.warning("Upload a CV first, or uncheck the upload option to use the sample.")
+            st.warning("Please upload a PDF first.")
         else:
             content = uploaded_content if use_upload else scenario.get_content(inject_attack)
-            prompt = build_prompt(query, content, use_defense, scenario)
-            if run_guardrail:
-                with st.spinner("🔍 Scanning document for prompt injection..."):
-                    result = guardrail.check(content)
+            with st.spinner("Scanning the document for hidden instructions…"):
+                result = guardrail.check(content)
+            if scenario is not None:
+                prompt = build_prompt(scenario.default_query, content, False, scenario)
             else:
-                result = None
-            st.session_state["last_run"] = {"prompt": prompt, "result": result}
-
+                prompt = content
+            st.session_state["dsc_last"] = {
+                "result": result,
+                "prompt": prompt,
+                "scenario_key": scenario_key,
+                "use_upload": use_upload,
+                "inject_attack": inject_attack,
+            }
             entry = {
                 "type": "scenario_tester",
-                "scenario": scenario_key,
+                "scenario": scenario_key or "upload",
                 "used_upload": use_upload,
-                "query": query,
-                "border_string_defense": use_defense,
-                "guardrail_ran": run_guardrail,
+                "query": "" if use_upload else scenario.default_query,
+                "border_string_defense": False,
+                "guardrail_ran": True,
                 "content": content,
                 "assembled_prompt": prompt,
-                "guardrail_label": result.label if result is not None else None,
-                "guardrail_score": result.score if result is not None else None,
-                "blocked": result.blocked if result is not None else None,
-                "flagged_text": result.flagged_text if result is not None and result.blocked else None,
+                "guardrail_label": result.label,
+                "guardrail_score": result.score,
+                "blocked": result.blocked,
+                "flagged_text": result.flagged_text if result.blocked else None,
             }
-            saved_entry = interview_log.log_interaction(entry)
-            st.session_state["last_log_entry"] = saved_entry
+            st.session_state["dsc_log"] = interview_log.log_interaction(entry)
 
-    if "last_run" in st.session_state:
-        run = st.session_state["last_run"]
-        st.subheader("Assembled model input")
+    if "dsc_last" in st.session_state:
+        _render_verdict(st.session_state["dsc_last"])
+
+
+def _render_verdict(run):
+    result = run["result"]
+    st.markdown("#### 2&nbsp;·&nbsp;Result")
+
+    if result.blocked:
+        st.markdown(BLOCKED_BANNER_HTML, unsafe_allow_html=True)
+        st.markdown(
+            "**🔎 What was hidden inside the document** — invisible to you, but the AI would read and obey it:"
+        )
+        st.code(result.flagged_text or "(hidden instruction)", language="text")
+        st.markdown(
+            "**✅ What to do:** don't hand this document to your AI assistant. "
+            "Flag it to your security / IT team."
+        )
+        if run.get("scenario_key") == "resume" and not run.get("use_upload"):
+            st.download_button(
+                "⬇️ Download this résumé as a PDF — open it, and you won't see the hidden text anywhere",
+                data=build_resume_pdf(run.get("inject_attack", True)),
+                file_name="resume_looks_normal.pdf",
+                mime="application/pdf",
+            )
+    else:
+        st.markdown(SAFE_BANNER_HTML, unsafe_allow_html=True)
+        st.caption("You can go ahead and give this document to your AI assistant.")
+
+    with st.expander("🔬 Show technical details (for IT)"):
+        st.caption("What the security model returned:")
+        st.write(
+            {
+                "verdict": result.label,
+                "confidence_score": round(result.score, 4),
+                "estimated_malicious_probability": f"{result.malicious_probability * 100:.1f}%",
+            }
+        )
+        st.caption(
+            "If this document were passed to the AI, this is the exact text the AI would receive:"
+        )
         st.code(run["prompt"], language="text")
 
-        if run["result"] is not None:
-            result = run["result"]
-            color = "red" if result.blocked else "green"
-            message = scenario.blocked_message if result.blocked else scenario.safe_message
-            st.subheader("Guardrail verdict")
-            st.markdown(f":{color}[**{message}**]")
-            st.caption(
-                f"Technical detail: label=`{result.label}`, score=`{result.score:.6f}` "
-                f"({result.malicious_probability * 100:.1f}% estimated malicious probability)"
-            )
-            if result.blocked:
-                st.markdown("**Hidden instruction detected:**")
-                st.code(result.flagged_text, language="text")
-
-    if "last_log_entry" in st.session_state:
+    if "dsc_log" in st.session_state:
         st.divider()
         st.download_button(
-            "⬇️ Download this run's log (JSON)",
-            data=json.dumps(st.session_state["last_log_entry"], indent=2),
-            file_name=f"scenario_log_{scenario_key}.json",
+            "⬇️ Download this check as a log file (JSON)",
+            data=json.dumps(st.session_state["dsc_log"], indent=2),
+            file_name="document_safety_check_log.json",
             mime="application/json",
-            help="Saves exactly what was scanned and decided for this one Run to your Downloads folder.",
+            help="Saves exactly what was scanned and decided for this one check.",
         )
 
 
@@ -445,32 +509,34 @@ def _render_admin_tab():
             st.error(f"Couldn't render the log preview ({e}). Use the download button above instead.")
 
 
-st.set_page_config(page_title="Prompt Injection Demo", layout="wide")
-st.title("Indirect Prompt Injection Demo")
-st.caption(
-    "How a hidden instruction inside external content can hijack an LLM, "
-    "and how a real ML guardrail can catch it first."
+st.set_page_config(
+    page_title="Document Safety Check",
+    page_icon="🛡️",
+    layout="centered",
+    initial_sidebar_state="collapsed",
+)
+_inject_theme_css()
+
+st.markdown(
+    '<div class="dsc-brand"><span class="dsc-logo">🛡️</span>'
+    '<span class="dsc-name">Document Safety Check</span></div>'
+    '<p class="dsc-sub">Check a document for hidden AI-hijacking instructions '
+    '<b>before</b> you hand it to an AI assistant.</p>',
+    unsafe_allow_html=True,
 )
 
 with st.sidebar:
-    st.caption(
-        "🪵 Every Scenario Tester run and every Chat turn is logged "
-        "automatically (for research/audit purposes). Download your own "
-        "logs directly in each tab, or view everything logged so far under "
-        "the 🔒 Admin tab (password required)."
-    )
-
+    st.caption("Advanced settings. The main **Check a document** tab needs nothing here.")
     st.divider()
-    st.caption("Chat tab settings")
+    st.caption("💬 Chat (advanced) settings")
     if not llm_client.get_configured_api_key():
         st.text_input(
             "OpenAI API key",
             type="password",
             key="manual_openai_key",
             help=(
-                "Paste your OpenAI API key here to use the Chat tab. It's "
-                "kept only in this browser session's memory -- never saved "
-                "to disk, logs, or git."
+                "Only needed for the Chat (advanced) tab. Kept in this browser "
+                "session's memory only -- never saved to disk, logs, or git."
             ),
         )
     gateway_on = st.toggle(
@@ -478,23 +544,26 @@ with st.sidebar:
         value=True,
         key="gateway_toggle",
         help=(
-            "On: every chat message and any attached PDF is scanned by a "
-            "security AI before reaching the assistant. If it looks like a "
-            "hidden instruction, the assistant will refuse and tell you so "
-            "instead of following it, and you'll see the detected risk "
-            "percentage for every message -- even when nothing is wrong. "
-            "Off: skip scanning entirely, to see what an unprotected "
-            "assistant would do."
+            "On: every chat message and any attached PDF is scanned by the "
+            "security model before reaching the assistant. Off: skip scanning "
+            "entirely, to see what an unprotected assistant would do."
         ),
     )
+    st.divider()
+    st.caption(
+        "🪵 Every check and chat turn is logged for the usability study; "
+        "view them under the 🔒 Admin tab (password required)."
+    )
 
-tab_tester, tab_chat, tab_admin = st.tabs(["🧪 Scenario Tester", "💬 Chat", "🔒 Admin"])
+tab_check, tab_chat, tab_admin = st.tabs(
+    ["🛡️ Check a document", "💬 Chat (advanced)", "🔒 Admin"]
+)
 
-with tab_tester:
+with tab_check:
     try:
-        _render_scenario_tester_tab()
+        _render_safety_check_tab()
     except Exception as e:
-        st.error(f"Something went wrong in the Scenario Tester tab: {e}")
+        st.error(f"Something went wrong on the Check a document tab: {e}")
 
 with tab_chat:
     try:
