@@ -1,0 +1,9 @@
+# Detection engine only (heavy, rarely changes) — installed first in Docker so the
+# baked-in model layer stays cached when app/LLM deps change.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.8.0
+transformers==4.57.6
+# DeBERTa-v3 fast tokenizer is bundled as tokenizer.json; these are belt-and-braces
+# so a clean image build never falls back to a converter that needs them.
+sentencepiece==0.2.0
+protobuf==6.33.6

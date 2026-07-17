@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Monitoring · cortis</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">📊</span>
+      <div>
+        <div class="brand-name">Monitoring</div>
+        <div class="brand-sub">Document safety activity across the organisation</div>
+      </div>
+    </div>
+    <nav class="topnav">
+      <button id="refresh-btn" class="link-btn" type="button">Refresh</button>
+      <a class="link-btn" href="/">← Back to checks</a>
+    </nav>
+  </header>
+
+  <main class="wrap wrap-wide">
+    <div id="sample-note" class="sample-note" hidden>
+      Includes sample activity for demonstration.
+    </div>
+
+    <section class="tiles" id="tiles"></section>
+
+    <div class="panels">
+      <section class="card panel">
+        <h2 class="panel-title">Blocks by team</h2>
+        <div id="by-team" class="bars"></div>
+      </section>
+      <section class="card panel">
+        <h2 class="panel-title">What was blocked</h2>
+        <div id="by-category" class="bars"></div>
+      </section>
+    </div>
+
+    <section class="card panel">
+      <h2 class="panel-title">Recent activity</h2>
+      <div class="table-scroll">
+        <table class="log-table">
+          <thead>
+            <tr><th>When</th><th>Document</th><th>Team</th><th>Result</th><th>Details</th></tr>
+          </thead>
+          <tbody id="log-body"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">cortis · monitoring view</footer>
+  <script src="/static/admin.js"></script>
+</body>
+</html>

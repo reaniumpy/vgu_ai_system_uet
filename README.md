@@ -1,10 +1,47 @@
 # Aegis — a prompt-injection guard (clean slate)
 
-> Working codename: **Aegis** (rename freely). This branch (`simple`) is a deliberate reset: the
+> Working codename: **cortis** (rename freely). This branch (`simple`) is a deliberate reset: the
 > previous Streamlit implementation was scrapped so the product can be **designed fresh** and run on
 > **Docker**, without inheriting the old UI. The old app is preserved on the `main` branch if ever
 > needed. This file is the single source of truth for *what the product should achieve* — not how it
 > should look.
+
+---
+
+## 0. Run it (Docker)
+
+cortis is built as **cortis — "Document Safety Check"**: a FastAPI service that serves a
+single, plain-language web UI. The detection engine is the off-the-shelf DeBERTa-v3
+prompt-injection classifier (`protectai/deberta-v3-base-prompt-injection-v2`), baked into
+the image so the container runs fully offline.
+
+**One command to build & run:**
+
+```bash
+make run              # builds the image and starts it on http://localhost:8000
+```
+
+(or without make: `docker build -t cortis . && docker run -p 8000:8000 cortis`)
+
+Then open **http://localhost:8000**. The first build downloads the model (~700 MB) into
+the image; after that, start-up is a few seconds.
+
+- **`/`** — the everyday check screen (Cohort A / non-technical users): paste text or
+  upload a `.pdf` / `.docx` / `.txt`, click **Check this document**, and get a plain
+  **Safe** or **Blocked** answer.
+- **`/admin`** — the monitoring screen (Cohort B / technical staff): recent checks, blocks
+  by team, and what was blocked. Seeded with sample activity on first run so it isn't empty.
+
+**Enabling the downstream AI assistant (optional).** On a *safe* document the app forwards
+it to OpenAI/ChatGPT (`gpt-4o-mini` by default) to carry out the user's request (e.g.
+summarise). Provide a key to turn this on — the guard itself works without one:
+
+```bash
+OPENAI_API_KEY=sk-... make run
+```
+
+Sample documents for usability tasks live in [`samples/`](samples/) (one clean, three with
+different hidden attacks) and are also loadable in-app via **"Load an example"**.
 
 ---
 
