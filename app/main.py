@@ -17,29 +17,26 @@ from .extract import ExtractionError, extract_from_upload
 _STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 _SAMPLES_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "samples")
 
-# Friendly metadata for the in-app "try an example" documents.
-_SAMPLE_META = {
-    "clean_resume.txt": {
-        "label": "A normal résumé",
-        "description": "An ordinary candidate résumé with nothing hidden inside.",
-        "expected": "safe",
-    },
-    "resume_with_hidden_instruction.txt": {
-        "label": "Résumé with a hidden instruction",
-        "description": "Looks like a résumé, but hides an instruction telling the AI to auto-approve it.",
-        "expected": "blocked",
-    },
-    "contract_with_data_trap.txt": {
-        "label": "Contract with a data trap",
-        "description": "A vendor contract that hides an instruction to email private data outside the company.",
-        "expected": "blocked",
-    },
-    "invoice_with_agent_hijack.txt": {
-        "label": "Invoice with a hidden command",
-        "description": "An invoice that hides an instruction telling the AI to delete supplier records.",
-        "expected": "blocked",
-    },
-}
+# The curated set of documents offered in the in-app file browser. Names are
+# neutral on purpose — the browser looks like a real folder, so a test
+# participant can't tell which files are safe vs. an attack from the list.
+_SAMPLE_FILES = [
+    "David_Chen_Resume.pdf",
+    "Ethan_Le_Resume.txt",
+    "Maria_Alvarez_Resume.pdf",
+    "Meridian_Services_Agreement.txt",
+    "Northwind_Invoice_INV-2043.txt",
+    "Orion_Invoice_9982.txt",
+    "Sophia_Tran_Resume.txt",
+]
+
+_KINDS = {".pdf": "PDF document", ".docx": "Word document", ".txt": "Text document",
+          ".md": "Text document"}
+
+
+def _sample_kind(name: str) -> str:
+    return _KINDS.get(os.path.splitext(name)[1].lower(), "Document")
+
 
 app = FastAPI(title="cortis — Document Safety Check")
 
@@ -67,13 +64,24 @@ async def check(
     text: str = Form(""),
     request: str = Form(""),
     team: str = Form(""),
+    sample: str = Form(""),
     file: UploadFile = File(None),
 ):
-    """Screen a pasted or uploaded document, then (if safe) run the assistant."""
+    """Screen a chosen sample, pasted text, or uploaded file; then (if safe) run the assistant."""
     source = "Pasted text"
     document = (text or "").strip()
 
-    if file is not None and file.filename:
+    if sample:
+        if sample not in _SAMPLE_FILES:
+            return _error("That document isn't available. Please choose one from the list.")
+        with open(os.path.join(_SAMPLES_DIR, sample), "rb") as fh:
+            data = fh.read()
+        try:
+            document = extract_from_upload(sample, data).strip()
+        except ExtractionError as exc:
+            return _error(str(exc))
+        source = sample
+    elif file is not None and file.filename:
         data = await file.read()
         if len(data) > config.MAX_UPLOAD_BYTES:
             return _error("That file is too large. Please use a file under 5 MB.")
@@ -106,13 +114,19 @@ def stats():
 # ── Samples & config helpers ─────────────────────────────────────────────────
 @app.get("/api/samples")
 def samples():
+    """Neutral file listing for the in-app browser — no safe/attack hints."""
     items = []
-    for name, meta in _SAMPLE_META.items():
+    for name in _SAMPLE_FILES:
         path = os.path.join(_SAMPLES_DIR, name)
         if not os.path.exists(path):
             continue
-        with open(path, "r", encoding="utf-8") as fh:
-            items.append({"name": name, "text": fh.read(), **meta})
+        items.append(
+            {
+                "name": name,
+                "kind": _sample_kind(name),
+                "size_kb": max(1, round(os.path.getsize(path) / 1024)),
+            }
+        )
     return JSONResponse({"samples": items})
 
 

@@ -6,7 +6,6 @@ const els = {
   help: $("help-btn"),
   helpPanel: $("help-panel"),
   text: $("doc-text"),
-  fileInput: $("doc-file"),
   fileBtn: $("file-btn"),
   fileChip: $("file-chip"),
   fileChipName: $("file-chip-name"),
@@ -14,19 +13,23 @@ const els = {
   request: $("request"),
   team: $("team"),
   checkBtn: $("check-btn"),
-  exampleBtn: $("example-btn"),
-  exampleMenu: $("example-menu"),
   status: $("status"),
   result: $("result"),
+  browser: $("browser"),
+  browserClose: $("browser-close"),
+  browserCancel: $("browser-cancel"),
+  fileList: $("file-list"),
 };
 
-let assistantEnabled = true;
+const KIND_ICON = { "PDF document": "📕", "Word document": "📘", "Text document": "📄" };
+
+let selectedSample = null;   // filename chosen in the fake browser, or null
+let samplesLoaded = false;
 
 // ── Setup ────────────────────────────────────────────────────────────────
 async function init() {
   try {
     const cfg = await (await fetch("/api/config")).json();
-    assistantEnabled = cfg.assistant_enabled;
     els.team.innerHTML = "";
     for (const t of cfg.teams) {
       const opt = document.createElement("option");
@@ -36,14 +39,13 @@ async function init() {
   } catch (_) { /* non-fatal: form still works */ }
 
   els.help.addEventListener("click", toggleHelp);
-  els.fileBtn.addEventListener("click", () => els.fileInput.click());
-  els.fileInput.addEventListener("change", onFilePicked);
+  els.fileBtn.addEventListener("click", openBrowser);
+  els.browserClose.addEventListener("click", closeBrowser);
+  els.browserCancel.addEventListener("click", closeBrowser);
+  els.browser.addEventListener("click", (e) => { if (e.target === els.browser) closeBrowser(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeBrowser(); });
   els.fileChipRemove.addEventListener("click", clearFile);
   els.checkBtn.addEventListener("click", runCheck);
-  els.exampleBtn.addEventListener("click", toggleExamples);
-  document.addEventListener("click", (e) => {
-    if (!els.exampleMenu.contains(e.target) && e.target !== els.exampleBtn) hideExamples();
-  });
 }
 
 function toggleHelp() {
@@ -52,60 +54,59 @@ function toggleHelp() {
   els.help.setAttribute("aria-expanded", String(open));
 }
 
-// ── File handling ────────────────────────────────────────────────────────
-function onFilePicked() {
-  const f = els.fileInput.files[0];
-  if (!f) return;
-  els.fileChipName.textContent = f.name;
+// ── Fake file browser (curated samples only) ───────────────────────────────
+async function openBrowser() {
+  if (!samplesLoaded) {
+    try {
+      const data = await (await fetch("/api/samples")).json();
+      els.fileList.innerHTML = "";
+      for (const s of data.samples) {
+        const li = document.createElement("li");
+        li.className = "file-item";
+        li.setAttribute("role", "button");
+        li.tabIndex = 0;
+        li.innerHTML =
+          `<span class="fi-icon" aria-hidden="true"></span>` +
+          `<span class="fi-name"></span>` +
+          `<span class="fi-meta"></span>`;
+        li.querySelector(".fi-icon").textContent = KIND_ICON[s.kind] || "📄";
+        li.querySelector(".fi-name").textContent = s.name;
+        li.querySelector(".fi-meta").textContent = `${s.kind} · ${s.size_kb} KB`;
+        const pick = () => selectSample(s.name);
+        li.addEventListener("click", pick);
+        li.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); } });
+        els.fileList.appendChild(li);
+      }
+      samplesLoaded = true;
+    } catch (_) {
+      els.fileList.innerHTML = '<li class="file-empty">Couldn\'t load the document list.</li>';
+    }
+  }
+  els.browser.hidden = false;
+}
+
+function closeBrowser() { els.browser.hidden = true; }
+
+function selectSample(name) {
+  selectedSample = name;
+  els.fileChipName.textContent = name;
   els.fileChip.hidden = false;
   els.text.disabled = true;
-  els.text.placeholder = "Using the uploaded file. Remove it to paste text instead.";
+  els.text.placeholder = "Using the selected document. Remove it to paste text instead.";
+  closeBrowser();
 }
 
 function clearFile() {
-  els.fileInput.value = "";
+  selectedSample = null;
   els.fileChip.hidden = true;
   els.text.disabled = false;
   els.text.placeholder = "Paste a résumé, contract, invoice, or message here…";
 }
 
-// ── Examples ─────────────────────────────────────────────────────────────
-async function toggleExamples() {
-  if (!els.exampleMenu.hidden) { hideExamples(); return; }
-  if (!els.exampleMenu.dataset.loaded) {
-    try {
-      const data = await (await fetch("/api/samples")).json();
-      for (const s of data.samples) {
-        const btn = document.createElement("button");
-        btn.className = "example-item";
-        btn.type = "button";
-        btn.innerHTML = `<span class="ex-label"></span><span class="ex-desc"></span>`;
-        btn.querySelector(".ex-label").textContent = s.label;
-        btn.querySelector(".ex-desc").textContent = s.description;
-        btn.addEventListener("click", () => {
-          clearFile();
-          els.text.value = s.text;
-          hideExamples();
-          els.text.focus();
-        });
-        els.exampleMenu.appendChild(btn);
-      }
-      els.exampleMenu.dataset.loaded = "1";
-    } catch (_) { /* ignore */ }
-  }
-  els.exampleMenu.hidden = false;
-  els.exampleBtn.setAttribute("aria-expanded", "true");
-}
-function hideExamples() {
-  els.exampleMenu.hidden = true;
-  els.exampleBtn.setAttribute("aria-expanded", "false");
-}
-
 // ── Run a check ──────────────────────────────────────────────────────────
 async function runCheck() {
-  const hasFile = !els.fileChip.hidden && els.fileInput.files[0];
   const text = els.text.value.trim();
-  if (!hasFile && !text) {
+  if (!selectedSample && !text) {
     showInlineError("Add a document first — paste some text or choose a file to check.");
     return;
   }
@@ -116,10 +117,10 @@ async function runCheck() {
   els.checkBtn.disabled = true;
 
   const fd = new FormData();
-  fd.append("text", text);
   fd.append("request", els.request.value);
   fd.append("team", els.team.value || "");
-  if (hasFile) fd.append("file", els.fileInput.files[0]);
+  if (selectedSample) fd.append("sample", selectedSample);
+  else fd.append("text", text);
 
   try {
     const res = await fetch("/api/check", { method: "POST", body: fd });

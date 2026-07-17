@@ -46,12 +46,11 @@
       </div>
 
       <div class="file-row">
-        <input id="doc-file" type="file" class="visually-hidden"
-          accept=".txt,.md,.pdf,.docx" />
         <button id="file-btn" class="secondary-btn" type="button">Choose a file…</button>
-        <span class="file-hint">PDF, Word (.docx) or text file</span>
+        <span class="file-hint">Pick a document to check</span>
       </div>
       <div id="file-chip" class="file-chip" hidden>
+        <span class="file-chip-icon" aria-hidden="true">📄</span>
         <span id="file-chip-name"></span>
         <button id="file-chip-remove" class="chip-x" type="button" aria-label="Remove file">✕</button>
       </div>
@@ -70,14 +69,23 @@
 
       <div class="actions">
         <button id="check-btn" class="primary-btn" type="button">Check this document</button>
-        <div class="example-wrap">
-          <button id="example-btn" class="link-btn" type="button" aria-expanded="false">
-            Need something to try? Load an example
-          </button>
-          <div id="example-menu" class="example-menu" hidden></div>
-        </div>
       </div>
     </section>
+
+    <!-- Fake file browser: only the curated sample documents, no real filesystem -->
+    <div id="browser" class="modal-overlay" hidden>
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="browser-title">
+        <div class="modal-head">
+          <span id="browser-title">Choose a document</span>
+          <button id="browser-close" class="chip-x" type="button" aria-label="Close">✕</button>
+        </div>
+        <p class="modal-hint">Select a document to check.</p>
+        <ul id="file-list" class="file-list"></ul>
+        <div class="modal-foot">
+          <button id="browser-cancel" class="secondary-btn" type="button">Cancel</button>
+        </div>
+      </div>
+    </div>
 
     <!-- Status / result -->
     <section id="status" class="status" aria-live="polite" hidden>

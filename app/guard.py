@@ -65,9 +65,10 @@ _INTENT_PATTERNS = [
     (
         "instruction_override",
         re.compile(
-            r"\b(ignore|disregard|forget|override|bypass|do not follow)\b.{0,40}"
-            r"\b(previous|prior|above|earlier|all|any|these|the)\b.{0,20}"
-            r"\b(instruction|instructions|rules|prompt|prompts|guidelines?|directions?)\b",
+            r"\b(ignore|disregard|forget|override|bypass|do not follow|skip)\b.{0,40}"
+            r"\b(previous|prior|above|earlier|all|any|these|the|further)\b.{0,25}"
+            r"\b(instruction|instructions|rules|prompt|prompts|guidelines?|directions?|"
+            r"criteria|checks?|evaluation|screening|steps|process)\b",
             re.I | re.S,
         ),
     ),
@@ -77,6 +78,8 @@ _INTENT_PATTERNS = [
             r"("
             r"\byou are now\b|\bact as\b|\bpretend to be\b|\bdeveloper mode\b|"
             r"\bsystem prompt\b|\breveal your\b|\bdisregard your\b|\byour (new )?instructions? (are|is)\b|"
+            r"\bsystem (instruction|note|update)\b|\bnote to (the )?(reviewing )?ai\b|"
+            r"\battention[,: ]+ai\b|\bai assistant:\b|"
             r"\bjailbreak\b|\bDAN\b"
             r")",
             re.I | re.S,
@@ -161,7 +164,7 @@ def _segments(text: str) -> list:
 
     def add(passage: str) -> None:
         passage = passage.strip()
-        if not passage:
+        if len(passage.split()) < config.MIN_SEGMENT_WORDS:
             return
         key = passage[:300]
         if key in seen:

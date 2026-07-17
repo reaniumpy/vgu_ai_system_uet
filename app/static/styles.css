@@ -122,20 +122,39 @@ body {
 .primary-btn:hover { background: #2c49bd; }
 .primary-btn:disabled { opacity: .6; cursor: default; }
 
-/* ── Example menu ────────────────────────────────────────── */
-.example-wrap { position: relative; }
-.example-menu {
-  position: absolute; right: 0; bottom: calc(100% + 8px); z-index: 10;
-  width: 320px; background: var(--card); border: 1px solid var(--line);
-  border-radius: 12px; box-shadow: var(--shadow); padding: 6px; text-align: left;
+.file-chip-icon { font-size: 15px; }
+
+/* ── Fake file browser (modal) ───────────────────────────── */
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 100; background: rgba(20, 28, 46, .45);
+  display: flex; align-items: center; justify-content: center; padding: 20px;
 }
-.example-item {
-  display: block; width: 100%; text-align: left; background: none; border: none;
-  padding: 10px 12px; border-radius: 8px; cursor: pointer; font: inherit;
+.modal {
+  width: 100%; max-width: 460px; background: var(--card); border-radius: 14px;
+  box-shadow: 0 20px 60px rgba(16, 24, 40, .3); overflow: hidden;
+  display: flex; flex-direction: column; max-height: 80vh;
 }
-.example-item:hover { background: #f1f4fb; }
-.example-item .ex-label { font-weight: 600; font-size: 14px; }
-.example-item .ex-desc { font-size: 13px; color: var(--ink-soft); }
+.modal-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 18px; border-bottom: 1px solid var(--line); font-weight: 700;
+}
+.modal-hint { margin: 0; padding: 12px 18px 0; font-size: 13px; color: var(--ink-soft); }
+.file-list { list-style: none; margin: 10px 0; padding: 6px 10px; overflow-y: auto; }
+.file-item {
+  display: grid; grid-template-columns: 26px 1fr auto; align-items: center;
+  gap: 12px; padding: 11px 12px; border-radius: 9px; cursor: pointer;
+}
+.file-item:hover, .file-item:focus {
+  background: #eef2ff; outline: none;
+}
+.fi-icon { font-size: 20px; }
+.fi-name { font-weight: 600; font-size: 14px; word-break: break-all; }
+.fi-meta { font-size: 12px; color: var(--ink-soft); white-space: nowrap; }
+.file-empty { padding: 16px; color: var(--ink-soft); font-size: 14px; }
+.modal-foot {
+  display: flex; justify-content: flex-end; padding: 14px 18px;
+  border-top: 1px solid var(--line);
+}
 
 /* ── Status ──────────────────────────────────────────────── */
 .status {

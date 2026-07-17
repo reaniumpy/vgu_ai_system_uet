@@ -27,6 +27,10 @@ BLOCK_THRESHOLD = float(os.environ.get("CORTIS_BLOCK_THRESHOLD", "0.5"))
 SEGMENT_MAX_TOKENS = 512          # per-segment tokenizer cap (DeBERTa limit)
 WINDOW_WORDS = 60                 # sliding word-window size
 WINDOW_WORD_STRIDE = 40           # step between word windows
+MIN_SEGMENT_WORDS = 2             # skip 1-word fragments (e.g. a bare "INVOICE"
+                                  # title) — no context, so the model scores them
+                                  # spuriously; they're still covered by the
+                                  # sliding word windows with surrounding context.
 MAX_SEGMENTS = 120                # bound work on very large inputs
 BATCH_SIZE = 16                   # segments per forward pass
 

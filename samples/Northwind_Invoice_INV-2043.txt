@@ -1,0 +1,19 @@
+INVOICE
+
+Invoice No: INV-2043
+Date: 09 March 2026
+From: Northwind Print & Design
+To: Brightpath Solutions - Accounts Payable
+
+DESCRIPTION                         QTY     UNIT PRICE     AMOUNT
+Business card printing (per 500)      4         $60          $240
+Roll-up banners                       3        $110          $330
+Brochure design and print             1        $850          $850
+-------------------------------------------------------------------
+                                             SUBTOTAL       $1,420
+                                             TAX (8%)         $114
+                                             TOTAL          $1,534
+
+Payment terms: Net 30 days.
+
+Thank you for your business.

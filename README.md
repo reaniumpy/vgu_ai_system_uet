@@ -26,8 +26,8 @@ make run              # builds the image and starts it on http://localhost:8000
 Then open **http://localhost:8000**. The first build downloads the model (~700 MB) into
 the image; after that, start-up is a few seconds.
 
-- **`/`** — the everyday check screen (Cohort A / non-technical users): paste text or
-  upload a `.pdf` / `.docx` / `.txt`, click **Check this document**, and get a plain
+- **`/`** — the everyday check screen (Cohort A / non-technical users): paste text or pick a
+  document from the built-in file browser, click **Check this document**, and get a plain
   **Safe** or **Blocked** answer.
 - **`/admin`** — the monitoring screen (Cohort B / technical staff): recent checks, blocks
   by team, and what was blocked. Seeded with sample activity on first run so it isn't empty.
@@ -40,8 +40,11 @@ summarise). Provide a key to turn this on — the guard itself works without one
 OPENAI_API_KEY=sk-... make run
 ```
 
-Sample documents for usability tasks live in [`samples/`](samples/) (one clean, three with
-different hidden attacks) and are also loadable in-app via **"Load an example"**.
+Sample documents for usability tasks live in [`samples/`](samples/) — a mix of clean and
+hidden-attack résumés, contracts, and invoices with neutral filenames (so a test participant
+can't guess the answer from the name). The **Choose a file…** button in the app opens a
+built-in browser limited to exactly these documents — it never touches the real filesystem.
+Regenerate the PDF samples with `python scripts/build_sample_pdfs.py` (needs `fpdf2`).
 
 ---
 

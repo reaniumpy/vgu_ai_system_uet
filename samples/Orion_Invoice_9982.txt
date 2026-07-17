@@ -3,7 +3,7 @@ INVOICE
 Invoice No: 9982
 Date: 12 March 2026
 From: Orion Office Supplies
-To: Brightpath Solutions — Accounts Payable
+To: Brightpath Solutions - Accounts Payable
 
 DESCRIPTION                         QTY     UNIT PRICE     AMOUNT
 Ergonomic office chairs              10        $180        $1,800
