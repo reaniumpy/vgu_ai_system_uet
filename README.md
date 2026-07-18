@@ -1,121 +1,207 @@
-# Aegis — a prompt-injection guard (clean slate)
+# cortis — Document Safety Check
 
-> Working codename: **cortis** (rename freely). This branch (`simple`) is a deliberate reset: the
-> previous Streamlit implementation was scrapped so the product can be **designed fresh** and run on
-> **Docker**, without inheriting the old UI. The old app is preserved on the `main` branch if ever
-> needed. This file is the single source of truth for *what the product should achieve* — not how it
-> should look.
+**cortis is a prompt-injection guard that sits in front of an AI assistant.** A team member
+signs in, uploads their everyday documents (CVs, contracts, invoices), and cortis screens each
+one for hidden instructions — a *prompt-injection* attack — **before** any of it reaches the
+AI. Safe documents get an AI result tuned to the team's job; dangerous ones are blocked and
+never touch the model. It is built for **non-technical staff**: every verdict is in plain
+language, in English or Tiếng Việt.
+
+> The product requirements, goals, and the usability framework it's designed against live in
+> **[SRS.md](SRS.md)** (the Software Requirements Specification). This README is about the
+> system itself — how it works and how to run it.
 
 ---
 
-## 0. Run it (Docker)
+## How it works
 
-cortis is a FastAPI service with **role-based workspaces**: a team member signs in and lands
-in a workspace tuned to *their* job, with the DeBERTa-v3 prompt-injection classifier
-(`protectai/deberta-v3-base-prompt-injection-v2`, baked into the image for offline use)
-screening every document before it reaches the AI assistant.
-
-**One command to build & run:**
-
-```bash
-make run              # builds the image and starts it on http://localhost:8000
+```mermaid
+flowchart LR
+    U[Team member signs in] -->|uploads a document| G{cortis guard<br/>DeBERTa classifier}
+    G -->|blocked| X[Stopped · flagged passage shown<br/>never reaches the AI]
+    G -->|safe| A[AI assistant<br/>OpenAI · team task]
+    A --> R[Result in the workspace]
+    G -. every check logged .-> M[(Activity log)]
+    X -. report to security .-> M
+    M --> S[Security monitoring]
 ```
 
-(or without make: `docker build -t cortis . && docker run -p 8000:8000 cortis`)
+1. **Sign in** as a team member (passwordless demo picker). You land in a workspace tuned to
+   your team.
+2. **Add documents** — upload your own files (PDF, Word, or text; up to 10 at a time) or add a
+   built-in sample.
+3. **Screen** — the guard (a local DeBERTa-v3 classifier) scores each document for prompt
+   injection. It scans in small overlapping segments so a short hidden instruction buried in a
+   long, benign document isn't diluted.
+4. **Decide & explain** — each document becomes a row in a results table:
+   - **Safe** → forwarded to the AI assistant for the team's task, and the result is shown.
+   - **Blocked** → stopped before the AI, with the **exact flagged passage** quoted in plain
+     language and a next step. The AI never sees it.
+5. **Report & monitor** — any result can be flagged to Security (false positive / real threat /
+   possible miss). Every check and report flows into the **Security monitoring** dashboard.
 
-Then open **http://localhost:8000** and **sign in** (demo accounts, no password):
+### Roles & workspaces
 
 | Account | Team | Workspace |
 |---|---|---|
-| Sophia Tran | HR | **Candidate screening** — upload the job description + up to 10 CVs → guard screens every CV → pass/not-pass list with a fit rating against the JD |
-| Nghia Le | Legal | **Contract review** — upload a contract (or pick a sample) → guard checks it → key terms, obligations, and risk flags |
-| Long Vu | Finance | **Invoice processing** — upload an invoice (or pick a sample) → guard checks it → extract vendor, amounts, totals for payment |
-| An Tran | Security | **Monitoring** — org-wide activity: checks, blocks by team, who checked what |
+| Sophia Tran | HR | **Candidate screening** — upload a job description + up to 10 CVs → each CV is screened, then rated for fit against the JD. Results ranked, exportable to CSV. |
+| Nghia Le | Legal | **Contract review** — upload contracts (or add samples) → each is screened, then summarised (parties, obligations, risk flags). |
+| Long Vu | Finance | **Invoice processing** — upload invoices → each is screened, then key figures are extracted for payment. |
+| An Tran | Security | **Monitoring** — org-wide activity: totals, blocks by team, what was blocked, and reports raised by other teams. |
 
-Each workspace only shows its own team's documents, and every action is screened first —
-blocked documents never reach the assistant. HR uploads the job description once and batch-screens
-the CVs against it (no re-attaching per candidate); Legal and Finance upload their own document or
-pick a sample. Every screen has an **English / Tiếng Việt** toggle; on a block the app shows the
-exact flagged passage inline, and a first-run onboarding banner + per-workspace **Help** explain
-the flow.
+Each workspace only sees its own team's documents; cross-team access is blocked. Every screen
+has an **English / Tiếng Việt** toggle, a first-run onboarding banner, and per-workspace **Help**.
 
-**Enabling the downstream AI assistant (optional).** On a *safe* document the app forwards it
-to OpenAI/ChatGPT (`gpt-4o-mini` by default) for the team's task. Paste your key into the
-git-ignored `.env` (`OPENAI_API_KEY=…`) then `make run`. The guard works without a key.
+### Architecture
 
-**Production notes.** Sign-in is a passwordless demo picker — swap in real SSO/password auth
-for production, and set `CORTIS_SECRET_KEY` (session-cookie signing). `make run` mounts a
-`cortis-data` volume so the activity log persists across restarts. Sample documents live in
-[`samples/{hr,legal,finance}/`](samples/) with neutral filenames (so a test participant can't
-guess the answer). Regenerate the PDF résumés with `python scripts/build_sample_pdfs.py`
-(needs `fpdf2`).
+- **Backend** — [FastAPI](https://fastapi.tiangolo.com/) (`app/main.py`): auth/session, the
+  `/api/check` screening endpoint, batch upload handling, the report feedback loop, and the
+  monitoring API.
+- **Guard** (`app/guard.py`) — the off-the-shelf classifier
+  [`protectai/deberta-v3-base-prompt-injection-v2`](https://huggingface.co/protectai/deberta-v3-base-prompt-injection-v2),
+  run locally on CPU via PyTorch/Transformers. It turns the raw score into a plain-language
+  verdict and names the *kind* of attack to word the explanation.
+- **AI assistant** (`app/assistant.py`) — calls OpenAI (`gpt-4o-mini` by default) for the
+  team's downstream task, and **only ever on documents the guard marked safe**.
+- **Activity log** (`app/logstore.py`) — an append-only JSONL of every check + every report,
+  plus the aggregates the monitoring view reads.
+- **Frontend** (`app/static/`) — plain HTML/CSS/JS, no framework: `login`, `workspace` (shared,
+  adapts per role), `monitoring`, and `i18n.js` (EN/VI).
 
----
-
-## 1. The product goal (what it must achieve — deliberately UI-agnostic)
-
-A guard that sits **in front of an LLM** and catches **prompt-injection** — hidden or malicious
-instructions smuggled inside untrusted input (a document, a message, a pasted file) that try to
-hijack the model. The product should:
-
-1. **Detect** whether a given input contains a prompt-injection attempt (the model / engine's job).
-2. **Decide** clearly: let it through, or block it.
-3. **Explain the result to a non-expert** in plain language they can understand and act on —
-   *without* exposing raw model internals (scores, labels, tensors) as the primary message.
-
-The user is a **non-technical professional**, not an ML engineer. Success is measured by whether that
-person can *use* the product and trust its answer — i.e. by **usability**, not by model accuracy
-(model accuracy is a separate, technical question).
-
-**Constraints:** runs on **Docker**; the framework/UI is an open design decision for the rebuild.
-
-## 2. Day 4 objective (the course deliverable)
-
-Course **61BIS515 — Usability Evaluation and Testing** (VGU). **Day 4 = submit a report and present
-the findings of a usability-testing study.** So the product must be usable enough to run a real
-usability test on it: recruit ~5 non-expert users, give them realistic goal-based tasks, observe them
-via think-aloud, measure, and report findings + recommendations.
-
-## 3. What the UET course teaches (method, condensed)
-
-- **Usability = effectiveness · efficiency · satisfaction**, in a context of use (ISO 9241-11).
-- **Method:** moderated, task-based testing with a **concurrent think-aloud** protocol; combine
-  **quantitative** metrics (task-success rate, time-on-task, error rate) with **qualitative**
-  observation, plus standardized post-test questionnaires (**SUS**; single-task ease via **SEQ**).
-- **You only need ~5 users** per user group to surface most usability problems (Nielsen).
-- **Personas** frame *who* you test with (user characteristics, goals, context of use); **tasks must
-  be realistic, goal-oriented, and free of navigation hints** — describe *what the user wants to
-  achieve, not how to do it*.
-- **Analysis:** descriptive statistics (mean, median, range), compare against targets, never rely on
-  a single metric, and end with **actionable recommendations**.
-
-## 4. Quesenbery's 5 Es (usability *outcomes* to design for)
-
-1. **Effective** — users can complete their goal correctly.
-2. **Efficient** — they do it quickly, with little effort.
-3. **Engaging** — the interface is pleasant and holds attention appropriately.
-4. **Error-tolerant** — it prevents errors, and helps users recover when they happen.
-5. **Easy to learn** — first-time and returning users get going without training.
-
-## 5. Nielsen's 10 usability heuristics (design *rules* to check against)
-
-1. **Visibility of system status** — always show what's happening.
-2. **Match between system and the real world** — speak the user's language, not jargon.
-3. **User control and freedom** — easy undo / exit; no dead ends.
-4. **Consistency and standards** — follow platform and internal conventions.
-5. **Error prevention** — stop problems before they happen.
-6. **Recognition rather than recall** — make options visible; don't force memory.
-7. **Flexibility and efficiency of use** — accelerators for experts, simple path for novices.
-8. **Aesthetic and minimalist design** — no irrelevant clutter.
-9. **Help users recognize, diagnose, and recover from errors** — plain-language, constructive messages.
-10. **Help and documentation** — available and task-focused when needed.
-
-## 6. Requirements
-
-See `requirements.txt` — currently only the core detection-model dependencies. Extend it as the fresh
-Docker design takes shape.
+```
+app/
+├── main.py          FastAPI routes (auth, check, report, monitoring)
+├── guard.py         DeBERTa classifier → plain-language verdict
+├── assistant.py     OpenAI downstream task (safe documents only)
+├── workspaces.py    accounts, teams, sample docs, per-team AI task
+├── logstore.py      append-only activity log + monitoring aggregates
+├── extract.py       text extraction from PDF / DOCX / TXT uploads
+├── config.py        environment configuration
+└── static/          login · workspace · monitoring · i18n · styles
+samples/{hr,legal,finance}/   demo documents (neutral filenames)
+scripts/download_model.py     bakes the model into the Docker image
+Dockerfile · Makefile · requirements.txt · requirements-engine.txt
+```
 
 ---
 
-*Report note: the course runs an AI-content check on submitted reports — write report/presentation
-prose in your own words.*
+## Run it locally
+
+### Option A — Docker (recommended)
+
+The image bakes the detection model in, so it runs fully offline after the build.
+
+```bash
+make run            # builds the image and starts it on http://localhost:8000
+```
+
+(or without make: `docker build -t cortis . && docker run -p 8000:8000 -v cortis-data:/app/data cortis`)
+
+Then open **http://localhost:8000** and sign in as any account. `make run` mounts a
+`cortis-data` volume so the activity log survives restarts. Other targets: `make build`,
+`make stop`, `make logs`.
+
+**Enable the AI assistant (optional).** The guard works with no key. To turn on the downstream
+AI result on safe documents, put your OpenAI key in a git-ignored `.env` and re-run:
+
+```bash
+echo "OPENAI_API_KEY=sk-..." > .env
+make run            # the Makefile passes .env into the container
+```
+
+### Option B — without Docker (local dev)
+
+Useful for editing the frontend (uvicorn serves the live files, no rebuild):
+
+```bash
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+python scripts/download_model.py               # one-time: caches the DeBERTa model (~750 MB)
+
+export CORTIS_LOG_PATH=./data/activity.jsonl   # the default (/app/data) is Docker-only
+export OPENAI_API_KEY=sk-...                    # optional (enables the AI assistant)
+uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+> The first request loads the model into memory — give it a few seconds. The repo needs
+> ~2 GB RAM free to hold PyTorch + the model.
+
+### Configuration
+
+All optional except where noted. Set them as environment variables (or in `.env` for Docker).
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `OPENAI_API_KEY` | — | Enables the AI assistant on safe documents. Guard works without it. |
+| `CORTIS_SECRET_KEY` | dev placeholder | **Set in production** — signs the session cookie. Use a long random string. |
+| `CORTIS_LOG_PATH` | `/app/data/activity.jsonl` | Where the activity log is written. Override for non-Docker runs. |
+| `CORTIS_BLOCK_THRESHOLD` | `0.5` | Injection probability at/above which a document is blocked. |
+| `CORTIS_ASSISTANT_MODEL` | `gpt-4o-mini` | OpenAI model for the downstream task. |
+| `CORTIS_MODEL_ID` | `protectai/deberta-v3-base-prompt-injection-v2` | The detection model. |
+| `CORTIS_MAX_UPLOAD_BYTES` | `5242880` (5 MB) | Per-file upload cap. |
+
+The app listens on **port 8000**. Health check: `GET /api/health`.
+
+---
+
+## Deploy to the cloud
+
+cortis is a standard Dockerized FastAPI service, so it runs on any platform that can run a
+container. It needs **≥ 2 GB RAM** (PyTorch + the model) and, for a persistent activity log, a
+disk mounted at `/app/data`.
+
+### Docker-based hosts (recommended)
+
+Works on **Render, Railway, Fly.io, Google Cloud Run, AWS App Runner, Azure Container Apps**,
+or any VM with Docker. General recipe:
+
+1. Push this repo to GitHub. The platform auto-detects the `Dockerfile`.
+2. Set environment variables (as secrets): **`OPENAI_API_KEY`** and a strong
+   **`CORTIS_SECRET_KEY`**.
+3. Give the instance **≥ 2 GB RAM**. The first build downloads the model into the image
+   (~2.8 GB) — allow a few minutes.
+4. (Optional) Attach a persistent disk mounted at **`/app/data`** so the activity log survives
+   redeploys, or point `CORTIS_LOG_PATH` at it.
+5. Deploy. Point the platform's health check at **`/api/health`**.
+
+**Port note.** The container listens on `8000`. Platforms that inject a `$PORT` (e.g. Cloud
+Run, which defaults to `8080`) need the start command overridden to bind it:
+
+```bash
+python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT
+```
+
+Example — Google Cloud Run:
+
+```bash
+gcloud run deploy cortis --source . \
+  --memory 2Gi --port 8000 \
+  --set-env-vars OPENAI_API_KEY=sk-...,CORTIS_SECRET_KEY=$(openssl rand -hex 32)
+```
+
+### Streamlit Community Cloud — not supported as-is
+
+Streamlit Community Cloud runs a single `streamlit run app.py` entrypoint, caps free apps at
+about **1 GB RAM**, and **can't run Docker or a FastAPI/uvicorn server**. This project is a
+FastAPI service with a ~2.8 GB image and a local PyTorch model, so it **cannot be deployed
+there directly**.
+
+Running on Streamlit Cloud would mean building a **different app**: a Streamlit UI that calls a
+**hosted** inference endpoint for the injection model (e.g. the
+[Hugging Face Inference API](https://huggingface.co/docs/api-inference)) instead of loading it
+locally, plus the OpenAI call — a separate, lighter frontend. If that's the target you need,
+it's a small standalone build; ask and it can be added alongside this one.
+
+---
+
+## Notes
+
+- **Sign-in is a passwordless demo picker** — swap in real SSO/password auth for production.
+  It intentionally lists the four roles so a usability test (or demo) can move between them.
+- **Sample documents** live in [`samples/{hr,legal,finance}/`](samples/) with neutral filenames
+  so a test participant can't guess the answer. Regenerate the PDF résumés with
+  `python scripts/build_sample_pdfs.py` (needs `fpdf2`).
+- **The guard is an off-the-shelf model.** It can false-positive on very formal boilerplate
+  (e.g. archaic legal phrasing) — the "Report to Security" action gives users a path to flag
+  that, which is a genuine usability finding, not something hidden.
+- **Product spec & usability framework:** see **[SRS.md](SRS.md)**.
