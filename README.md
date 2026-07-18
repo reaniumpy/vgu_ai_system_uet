@@ -34,14 +34,17 @@ Then open **http://localhost:8000** and **sign in** (demo accounts, no password)
 
 Each workspace only shows its own team's documents, and every action is screened first —
 blocked documents never reach the assistant. HR candidates are pre-linked to the role they
-applied for, so the job description is matched automatically (no re-attaching).
+applied for, so the job description is matched automatically (no re-attaching). Every screen
+has an **English / Tiếng Việt** toggle; on a block the app shows the exact flagged passage
+inline, and a first-run onboarding banner + per-workspace **Help** explain the flow.
 
 **Enabling the downstream AI assistant (optional).** On a *safe* document the app forwards it
 to OpenAI/ChatGPT (`gpt-4o-mini` by default) for the team's task. Paste your key into the
 git-ignored `.env` (`OPENAI_API_KEY=…`) then `make run`. The guard works without a key.
 
 **Production notes.** Sign-in is a passwordless demo picker — swap in real SSO/password auth
-for production, and set `CORTIS_SECRET_KEY` (session-cookie signing). Sample documents live in
+for production, and set `CORTIS_SECRET_KEY` (session-cookie signing). `make run` mounts a
+`cortis-data` volume so the activity log persists across restarts. Sample documents live in
 [`samples/{hr,legal,finance}/`](samples/) with neutral filenames (so a test participant can't
 guess the answer). Regenerate the PDF résumés with `python scripts/build_sample_pdfs.py`
 (needs `fpdf2`).

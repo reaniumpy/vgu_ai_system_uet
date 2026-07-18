@@ -11,19 +11,20 @@
     <div class="brand">
       <span class="brand-mark" aria-hidden="true">📊</span>
       <div>
-        <div class="brand-name">Monitoring</div>
-        <div class="brand-sub">Document safety activity across the organisation</div>
+        <div class="brand-name" data-i18n="mon.title">Monitoring</div>
+        <div class="brand-sub" data-i18n="mon.sub">Document safety activity across the organisation</div>
       </div>
     </div>
     <nav class="topnav">
       <span id="identity" class="identity"></span>
-      <button id="refresh-btn" class="link-btn" type="button">Refresh</button>
-      <button id="signout" class="link-btn" type="button">Sign out</button>
+      <button id="refresh-btn" class="link-btn" type="button" data-i18n="mon.refresh">Refresh</button>
+      <button id="lang-toggle" class="link-btn" type="button">Tiếng Việt</button>
+      <button id="signout" class="link-btn" type="button" data-i18n="nav.signout">Sign out</button>
     </nav>
   </header>
 
   <main class="wrap wrap-wide">
-    <div id="sample-note" class="sample-note" hidden>
+    <div id="sample-note" class="sample-note" data-i18n="mon.sample" hidden>
       Includes sample activity for demonstration.
     </div>
 
@@ -31,21 +32,28 @@
 
     <div class="panels">
       <section class="card panel">
-        <h2 class="panel-title">Blocks by team</h2>
+        <h2 class="panel-title" data-i18n="mon.byTeam">Blocks by team</h2>
         <div id="by-team" class="bars"></div>
       </section>
       <section class="card panel">
-        <h2 class="panel-title">What was blocked</h2>
+        <h2 class="panel-title" data-i18n="mon.byCat">What was blocked</h2>
         <div id="by-category" class="bars"></div>
       </section>
     </div>
 
     <section class="card panel">
-      <h2 class="panel-title">Recent activity</h2>
+      <h2 class="panel-title" data-i18n="mon.recent">Recent activity</h2>
       <div class="table-scroll">
         <table class="log-table">
           <thead>
-            <tr><th>When</th><th>Document</th><th>Team</th><th>By</th><th>Result</th><th>Details</th></tr>
+            <tr>
+              <th data-i18n="mon.th.when">When</th>
+              <th data-i18n="mon.th.document">Document</th>
+              <th data-i18n="mon.th.team">Team</th>
+              <th data-i18n="mon.th.by">By</th>
+              <th data-i18n="mon.th.result">Result</th>
+              <th data-i18n="mon.th.details">Details</th>
+            </tr>
           </thead>
           <tbody id="log-body"></tbody>
         </table>
@@ -54,6 +62,7 @@
   </main>
 
   <footer class="footer">cortis · monitoring view</footer>
+  <script src="/static/i18n.js"></script>
   <script src="/static/monitoring.js"></script>
 </body>
 </html>

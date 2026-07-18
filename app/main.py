@@ -146,7 +146,8 @@ def api_workspace(request: Request):
 
 
 @app.post("/api/check")
-async def api_check(request: Request, item: str = Form(""), text: str = Form("")):
+async def api_check(request: Request, item: str = Form(""), text: str = Form(""),
+                    lang: str = Form("en")):
     acct = _current(request)
     if not acct:
         return JSONResponse({"error": "Please sign in again."}, status_code=401)
@@ -179,7 +180,7 @@ async def api_check(request: Request, item: str = Form(""), text: str = Form("")
     payload = dict(result)
     payload["source"] = source
     payload["assistant"] = (
-        assistant.run(req, document, context) if result["verdict"] == "safe" else None
+        assistant.run(req, document, context, lang) if result["verdict"] == "safe" else None
     )
     return JSONResponse(payload)
 

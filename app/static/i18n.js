@@ -1,0 +1,297 @@
+"use strict";
+/* Lightweight client-side i18n. English + Vietnamese.
+ * Static markup: add data-i18n="key" (textContent) or data-i18n-ph="key" (placeholder).
+ * Dynamic JS: window.I18N.t("key"). Language is stored in localStorage; toggling reloads.
+ * Wrapped in an IIFE so only window.I18N is global — page scripts destructure it as
+ * `const { t } = window.I18N` without colliding with a global `t`. */
+
+(function () {
+const STRINGS = {
+  en: {
+    "brand.sub": "Document Safety Check",
+    "nav.signout": "Sign out",
+    "nav.help": "Help",
+    "lang.toggle": "Tiếng Việt",
+
+    "login.title": "Sign in",
+    "login.lead": "Choose your account to open your team's workspace.",
+    "login.note": "Demo sign-in — no password required. Single sign-on is a production follow-up.",
+    "login.loading": "Loading accounts…",
+    "login.failed": "Sign-in failed. Please try again.",
+
+    "team.hr.title": "Candidate screening",
+    "team.hr.blurb": "Screen a candidate's résumé against the role they applied for.",
+    "team.hr.action": "Screen candidate",
+    "team.hr.label": "Human Resources",
+    "team.legal.title": "Contract review",
+    "team.legal.blurb": "Review an incoming agreement before it goes to the AI assistant.",
+    "team.legal.action": "Review agreement",
+    "team.legal.label": "Legal",
+    "team.finance.title": "Invoice processing",
+    "team.finance.blurb": "Check an invoice before extracting its details for payment.",
+    "team.finance.action": "Process invoice",
+    "team.finance.label": "Finance",
+    "team.security.label": "Security",
+
+    "ws.loading": "Loading your documents…",
+    "ws.empty": "No documents in your workspace yet.",
+    "ws.loadFail": "Couldn't load your documents. Refresh to retry.",
+    "ws.pasteLink": "or check other text you've received",
+    "ws.applicant": "applicant",
+    "ws.applicants": "applicants",
+
+    "modal.candidate": "Candidate",
+    "modal.applyingFor": "Applying for",
+    "modal.roleReq": "Role requirements",
+    "modal.file": "File",
+    "modal.agreement": "Agreement",
+    "modal.invoice": "Invoice",
+    "note.hr": "cortis will check this résumé for hidden instructions, then assess how well the candidate fits this role.",
+    "note.legal": "cortis will check this agreement for hidden instructions, then summarise the key terms and anything worth a closer look.",
+    "note.finance": "cortis will check this invoice for hidden instructions, then pull out the details for payment.",
+
+    "btn.cancel": "Cancel",
+    "btn.done": "Done",
+    "btn.close": "Close",
+    "paste.title": "Check other text",
+    "paste.placeholder": "Paste the text you received here…",
+    "paste.run": "Check this text",
+
+    "check.status": "Checking this document…",
+    "err.generic": "Something went wrong. Please try again.",
+    "err.network": "We couldn't reach the safety checker. Please try again.",
+
+    "verdict.safe.headline": "Safe to use",
+    "verdict.safe.explanation": "cortis checked this document for hidden instructions and found none. It is safe to send to the AI assistant.",
+    "verdict.blocked.headline": "Blocked — this document tries to hijack the AI",
+
+    "finding.instruction_override.label": "Attempt to override the assistant",
+    "finding.instruction_override.explanation": "This document hides an instruction telling the AI assistant to ignore its own rules and do something else instead. That is a sign someone is trying to take control of the assistant through the document.",
+    "finding.data_deletion.label": "Attempt to delete data",
+    "finding.data_deletion.explanation": "This document hides an instruction telling the AI assistant to delete records or files. That is not a normal request — a document should never tell the assistant to erase your data.",
+    "finding.data_exfiltration.label": "Attempt to leak private information",
+    "finding.data_exfiltration.explanation": "This document hides an instruction telling the AI assistant to send private information — such as passwords, payroll, or confidential data — to an outside address. A normal document would never ask for that.",
+    "finding.role_manipulation.label": "Attempt to change the assistant's behaviour",
+    "finding.role_manipulation.explanation": "This document hides an instruction trying to change how the AI assistant behaves or to make it reveal its private settings. A normal document would not contain instructions aimed at the assistant.",
+    "finding.generic.label": "Hidden instruction found",
+    "finding.generic.explanation": "This document contains hidden instructions aimed at the AI assistant rather than at you. That is how a prompt-injection attack tries to hijack the assistant, so cortis stopped the document before it reached it.",
+
+    "flagged.title": "The hidden instruction we found",
+    "nextstep.title": "What to do next",
+    "nextstep.blocked": "Do not use this document with the AI assistant. If you trust the sender, ask them to resend a clean copy; otherwise report it to your IT or security team. Your other documents are unaffected.",
+
+    "result.hr": "Candidate fit",
+    "result.legal": "Contract review",
+    "result.finance": "Invoice details",
+    "badge.checkedSafe": "Checked & safe",
+    "source.checked": "Checked:",
+
+    "tech.summary": "Technical details",
+    "tech.decision": "Decision",
+    "tech.allowed": "Allowed through",
+    "tech.blocked": "Blocked",
+    "tech.finding": "Finding",
+    "tech.likelihood": "Injection likelihood",
+    "tech.passage": "Most suspicious passage:",
+
+    "help.title": "How this works",
+    "help.general": "cortis checks every document for hidden instructions — a \"prompt-injection\" attack — before the AI assistant uses it. Safe documents are passed on; dangerous ones are blocked and never reach the assistant.",
+    "help.hr": "Pick a candidate. cortis checks the résumé, then assesses how well they fit the position they applied for.",
+    "help.legal": "Pick an agreement. cortis checks it, then summarises the key terms and flags anything worth a closer legal look.",
+    "help.finance": "Pick an invoice. cortis checks it, then extracts the details you need for payment.",
+
+    "onboard.title": "Welcome to cortis",
+    "onboard.body": "Pick a document to begin. cortis checks it for hidden instructions, and only safe documents are sent to the AI assistant.",
+    "onboard.dismiss": "Got it",
+
+    "toast.welcome": "Signed in as",
+
+    "mon.title": "Monitoring",
+    "mon.sub": "Document safety activity across the organisation",
+    "mon.refresh": "Refresh",
+    "mon.sample": "Includes sample activity for demonstration.",
+    "mon.total": "Documents checked",
+    "mon.safe": "Cleared as safe",
+    "mon.blocked": "Threats blocked",
+    "mon.byTeam": "Blocks by team",
+    "mon.byCat": "What was blocked",
+    "mon.recent": "Recent activity",
+    "mon.loadFail": "Couldn't load activity. Try refreshing.",
+    "mon.noBlocks": "No blocks recorded yet.",
+    "mon.noActivity": "No activity yet.",
+    "mon.th.when": "When",
+    "mon.th.document": "Document",
+    "mon.th.team": "Team",
+    "mon.th.by": "By",
+    "mon.th.result": "Result",
+    "mon.th.details": "Details",
+    "mon.pill.safe": "Safe",
+    "mon.pill.blocked": "Blocked",
+    "mon.noThreat": "No threat found",
+    "mon.likelihood": "likelihood",
+    "time.now": "just now",
+    "time.h": "h ago",
+    "time.d": "d ago",
+  },
+
+  vi: {
+    "brand.sub": "Kiểm tra An toàn Tài liệu",
+    "nav.signout": "Đăng xuất",
+    "nav.help": "Trợ giúp",
+    "lang.toggle": "English",
+
+    "login.title": "Đăng nhập",
+    "login.lead": "Chọn tài khoản của bạn để mở không gian làm việc của nhóm.",
+    "login.note": "Đăng nhập demo — không cần mật khẩu. Đăng nhập một lần (SSO) là bước hoàn thiện cho bản chính thức.",
+    "login.loading": "Đang tải tài khoản…",
+    "login.failed": "Đăng nhập thất bại. Vui lòng thử lại.",
+
+    "team.hr.title": "Sàng lọc ứng viên",
+    "team.hr.blurb": "Kiểm tra hồ sơ ứng viên dựa trên vị trí họ đã ứng tuyển.",
+    "team.hr.action": "Sàng lọc ứng viên",
+    "team.hr.label": "Nhân sự",
+    "team.legal.title": "Rà soát hợp đồng",
+    "team.legal.blurb": "Rà soát hợp đồng nhận được trước khi đưa cho trợ lý AI.",
+    "team.legal.action": "Rà soát hợp đồng",
+    "team.legal.label": "Pháp lý",
+    "team.finance.title": "Xử lý hóa đơn",
+    "team.finance.blurb": "Kiểm tra hóa đơn trước khi trích xuất thông tin để thanh toán.",
+    "team.finance.action": "Xử lý hóa đơn",
+    "team.finance.label": "Tài chính",
+    "team.security.label": "An ninh",
+
+    "ws.loading": "Đang tải tài liệu của bạn…",
+    "ws.empty": "Chưa có tài liệu nào trong không gian làm việc của bạn.",
+    "ws.loadFail": "Không thể tải tài liệu. Hãy làm mới để thử lại.",
+    "ws.pasteLink": "hoặc kiểm tra đoạn văn bản khác bạn nhận được",
+    "ws.applicant": "ứng viên",
+    "ws.applicants": "ứng viên",
+
+    "modal.candidate": "Ứng viên",
+    "modal.applyingFor": "Ứng tuyển vị trí",
+    "modal.roleReq": "Yêu cầu của vị trí",
+    "modal.file": "Tệp",
+    "modal.agreement": "Hợp đồng",
+    "modal.invoice": "Hóa đơn",
+    "note.hr": "cortis sẽ kiểm tra hồ sơ này để tìm chỉ thị ẩn, sau đó đánh giá mức độ phù hợp của ứng viên với vị trí này.",
+    "note.legal": "cortis sẽ kiểm tra hợp đồng này để tìm chỉ thị ẩn, sau đó tóm tắt các điều khoản chính và những điểm cần lưu ý.",
+    "note.finance": "cortis sẽ kiểm tra hóa đơn này để tìm chỉ thị ẩn, sau đó trích xuất thông tin để thanh toán.",
+
+    "btn.cancel": "Hủy",
+    "btn.done": "Xong",
+    "btn.close": "Đóng",
+    "paste.title": "Kiểm tra văn bản khác",
+    "paste.placeholder": "Dán đoạn văn bản bạn nhận được vào đây…",
+    "paste.run": "Kiểm tra văn bản này",
+
+    "check.status": "Đang kiểm tra tài liệu…",
+    "err.generic": "Đã xảy ra lỗi. Vui lòng thử lại.",
+    "err.network": "Không thể kết nối tới bộ kiểm tra an toàn. Vui lòng thử lại.",
+
+    "verdict.safe.headline": "An toàn để sử dụng",
+    "verdict.safe.explanation": "cortis đã kiểm tra tài liệu này và không phát hiện chỉ thị ẩn. Tài liệu an toàn để gửi cho trợ lý AI.",
+    "verdict.blocked.headline": "Đã chặn — tài liệu này cố chiếm quyền điều khiển AI",
+
+    "finding.instruction_override.label": "Cố ghi đè trợ lý",
+    "finding.instruction_override.explanation": "Tài liệu này ẩn một chỉ thị yêu cầu trợ lý AI bỏ qua các quy tắc của nó và làm việc khác. Đây là dấu hiệu ai đó đang cố chiếm quyền điều khiển trợ lý thông qua tài liệu.",
+    "finding.data_deletion.label": "Cố xóa dữ liệu",
+    "finding.data_deletion.explanation": "Tài liệu này ẩn một chỉ thị yêu cầu trợ lý AI xóa hồ sơ hoặc tệp. Đây không phải yêu cầu bình thường — một tài liệu không bao giờ nên yêu cầu trợ lý xóa dữ liệu của bạn.",
+    "finding.data_exfiltration.label": "Cố rò rỉ thông tin riêng tư",
+    "finding.data_exfiltration.explanation": "Tài liệu này ẩn một chỉ thị yêu cầu trợ lý AI gửi thông tin riêng tư — như mật khẩu, bảng lương hoặc dữ liệu mật — ra bên ngoài. Một tài liệu bình thường sẽ không yêu cầu điều đó.",
+    "finding.role_manipulation.label": "Cố thay đổi hành vi của trợ lý",
+    "finding.role_manipulation.explanation": "Tài liệu này ẩn một chỉ thị nhằm thay đổi cách trợ lý AI hoạt động hoặc buộc nó tiết lộ cấu hình riêng. Một tài liệu bình thường sẽ không chứa chỉ thị nhắm vào trợ lý.",
+    "finding.generic.label": "Phát hiện chỉ thị ẩn",
+    "finding.generic.explanation": "Tài liệu này chứa các chỉ thị ẩn nhắm vào trợ lý AI thay vì nhắm vào bạn. Đây là cách một cuộc tấn công tiêm chỉ thị cố chiếm quyền điều khiển trợ lý, nên cortis đã chặn tài liệu trước khi nó đến trợ lý.",
+
+    "flagged.title": "Chỉ thị ẩn mà chúng tôi phát hiện",
+    "nextstep.title": "Việc cần làm tiếp theo",
+    "nextstep.blocked": "Đừng dùng tài liệu này với trợ lý AI. Nếu bạn tin tưởng người gửi, hãy đề nghị họ gửi lại bản sạch; nếu không, hãy báo cho bộ phận IT hoặc an ninh. Các tài liệu khác của bạn không bị ảnh hưởng.",
+
+    "result.hr": "Mức độ phù hợp của ứng viên",
+    "result.legal": "Rà soát hợp đồng",
+    "result.finance": "Chi tiết hóa đơn",
+    "badge.checkedSafe": "Đã kiểm tra & an toàn",
+    "source.checked": "Đã kiểm tra:",
+
+    "tech.summary": "Chi tiết kỹ thuật",
+    "tech.decision": "Quyết định",
+    "tech.allowed": "Đã cho qua",
+    "tech.blocked": "Đã chặn",
+    "tech.finding": "Phát hiện",
+    "tech.likelihood": "Khả năng bị tiêm chỉ thị",
+    "tech.passage": "Đoạn đáng ngờ nhất:",
+
+    "help.title": "Cách hoạt động",
+    "help.general": "cortis kiểm tra mọi tài liệu để tìm chỉ thị ẩn — một cuộc tấn công \"tiêm chỉ thị\" — trước khi trợ lý AI sử dụng. Tài liệu an toàn sẽ được chuyển tiếp; tài liệu nguy hiểm sẽ bị chặn và không bao giờ đến trợ lý.",
+    "help.hr": "Chọn một ứng viên. cortis kiểm tra hồ sơ, sau đó đánh giá mức độ phù hợp với vị trí họ đã ứng tuyển.",
+    "help.legal": "Chọn một hợp đồng. cortis kiểm tra, sau đó tóm tắt các điều khoản chính và nêu những điểm cần rà soát pháp lý kỹ hơn.",
+    "help.finance": "Chọn một hóa đơn. cortis kiểm tra, sau đó trích xuất thông tin bạn cần để thanh toán.",
+
+    "onboard.title": "Chào mừng đến với cortis",
+    "onboard.body": "Chọn một tài liệu để bắt đầu. cortis sẽ kiểm tra chỉ thị ẩn, và chỉ những tài liệu an toàn mới được gửi cho trợ lý AI.",
+    "onboard.dismiss": "Đã hiểu",
+
+    "toast.welcome": "Đã đăng nhập với tên",
+
+    "mon.title": "Giám sát",
+    "mon.sub": "Hoạt động an toàn tài liệu trên toàn tổ chức",
+    "mon.refresh": "Làm mới",
+    "mon.sample": "Bao gồm hoạt động mẫu để minh họa.",
+    "mon.total": "Tài liệu đã kiểm tra",
+    "mon.safe": "Đã xác nhận an toàn",
+    "mon.blocked": "Mối đe dọa đã chặn",
+    "mon.byTeam": "Chặn theo nhóm",
+    "mon.byCat": "Nội dung bị chặn",
+    "mon.recent": "Hoạt động gần đây",
+    "mon.loadFail": "Không thể tải hoạt động. Hãy thử làm mới.",
+    "mon.noBlocks": "Chưa ghi nhận lần chặn nào.",
+    "mon.noActivity": "Chưa có hoạt động nào.",
+    "mon.th.when": "Thời điểm",
+    "mon.th.document": "Tài liệu",
+    "mon.th.team": "Nhóm",
+    "mon.th.by": "Bởi",
+    "mon.th.result": "Kết quả",
+    "mon.th.details": "Chi tiết",
+    "mon.pill.safe": "An toàn",
+    "mon.pill.blocked": "Đã chặn",
+    "mon.noThreat": "Không phát hiện mối đe dọa",
+    "mon.likelihood": "khả năng",
+    "time.now": "vừa xong",
+    "time.h": " giờ trước",
+    "time.d": " ngày trước",
+  },
+};
+
+let LANG = localStorage.getItem("cortis_lang") || "en";
+if (!STRINGS[LANG]) LANG = "en";
+
+function t(key) {
+  const table = STRINGS[LANG] || STRINGS.en;
+  return (key in table) ? table[key] : (STRINGS.en[key] !== undefined ? STRINGS.en[key] : key);
+}
+
+function currentLang() { return LANG; }
+
+function setLang(l) {
+  if (!STRINGS[l]) return;
+  localStorage.setItem("cortis_lang", l);
+  window.location.reload();
+}
+
+function applyStaticI18n(root) {
+  (root || document).querySelectorAll("[data-i18n]").forEach((el) => {
+    el.textContent = t(el.getAttribute("data-i18n"));
+  });
+  (root || document).querySelectorAll("[data-i18n-ph]").forEach((el) => {
+    el.setAttribute("placeholder", t(el.getAttribute("data-i18n-ph")));
+  });
+  document.documentElement.setAttribute("lang", LANG);
+  const tog = document.getElementById("lang-toggle");
+  if (tog) {
+    tog.textContent = t("lang.toggle");
+    tog.onclick = () => setLang(LANG === "en" ? "vi" : "en");
+  }
+}
+
+window.I18N = { t, currentLang, setLang, applyStaticI18n };
+})();

@@ -1,44 +1,45 @@
 "use strict";
 
 const $ = (id) => document.getElementById(id);
+const { t, applyStaticI18n } = window.I18N;
 
 async function load() {
   let data;
   try {
     data = await (await fetch("/api/stats")).json();
   } catch (_) {
-    $("tiles").innerHTML = '<div class="inline-error">Couldn\'t load activity. Try refreshing.</div>';
+    $("tiles").innerHTML = `<div class="inline-error">${t("mon.loadFail")}</div>`;
     return;
   }
 
   $("sample-note").hidden = !data.has_sample;
   renderTiles(data);
-  renderBars($("by-team"), data.by_team, "block");
-  renderBars($("by-category"), data.by_category, "block");
+  renderBars($("by-team"), data.by_team);
+  renderBars($("by-category"), data.by_category);
   renderLog(data.recent);
 }
 
 function renderTiles(d) {
   const tiles = [
-    { label: "Documents checked", value: d.total, tone: "neutral" },
-    { label: "Cleared as safe", value: d.safe, tone: "safe" },
-    { label: "Threats blocked", value: d.blocked, tone: "block" },
+    { label: t("mon.total"), value: d.total, tone: "neutral" },
+    { label: t("mon.safe"), value: d.safe, tone: "safe" },
+    { label: t("mon.blocked"), value: d.blocked, tone: "block" },
   ];
   $("tiles").innerHTML = "";
-  for (const t of tiles) {
+  for (const tile of tiles) {
     const el = document.createElement("div");
-    el.className = "tile tile-" + t.tone;
+    el.className = "tile tile-" + tile.tone;
     el.innerHTML = `<div class="tile-value"></div><div class="tile-label"></div>`;
-    el.querySelector(".tile-value").textContent = t.value;
-    el.querySelector(".tile-label").textContent = t.label;
+    el.querySelector(".tile-value").textContent = tile.value;
+    el.querySelector(".tile-label").textContent = tile.label;
     $("tiles").appendChild(el);
   }
 }
 
-function renderBars(container, pairs, tone) {
+function renderBars(container, pairs) {
   container.innerHTML = "";
   if (!pairs || pairs.length === 0) {
-    container.innerHTML = '<div class="empty">No blocks recorded yet.</div>';
+    container.innerHTML = `<div class="empty">${t("mon.noBlocks")}</div>`;
     return;
   }
   const max = Math.max(...pairs.map((p) => p[1]));
@@ -51,7 +52,7 @@ function renderBars(container, pairs, tone) {
     const track = document.createElement("div");
     track.className = "bar-track";
     const fill = document.createElement("div");
-    fill.className = "bar-fill bar-" + tone;
+    fill.className = "bar-fill bar-block";
     fill.style.width = Math.max(6, (count / max) * 100) + "%";
     fill.textContent = count;
     track.appendChild(fill);
@@ -65,38 +66,33 @@ function renderLog(events) {
   const body = $("log-body");
   body.innerHTML = "";
   if (!events || events.length === 0) {
-    body.innerHTML = '<tr><td colspan="6" class="empty">No activity yet.</td></tr>';
+    body.innerHTML = `<tr><td colspan="6" class="empty">${t("mon.noActivity")}</td></tr>`;
     return;
   }
   for (const e of events) {
     const tr = document.createElement("tr");
 
     const when = document.createElement("td");
-    when.textContent = formatWhen(e.ts);
-    when.className = "nowrap";
+    when.textContent = formatWhen(e.ts); when.className = "nowrap";
 
-    const doc = document.createElement("td");
-    doc.textContent = e.source || "—";
-
-    const team = document.createElement("td");
-    team.textContent = e.team || "—";
-
-    const by = document.createElement("td");
-    by.textContent = e.user || "—";
-    by.className = "nowrap";
+    const doc = document.createElement("td"); doc.textContent = e.source || "—";
+    const team = document.createElement("td"); team.textContent = e.team || "—";
+    const by = document.createElement("td"); by.textContent = e.user || "—"; by.className = "nowrap";
 
     const result = document.createElement("td");
     const pill = document.createElement("span");
-    pill.className = "pill " + (e.verdict === "blocked" ? "pill-block" : "pill-safe");
-    pill.textContent = e.verdict === "blocked" ? "Blocked" : "Safe";
+    const blocked = e.verdict === "blocked";
+    pill.className = "pill " + (blocked ? "pill-block" : "pill-safe");
+    pill.textContent = blocked ? t("mon.pill.blocked") : t("mon.pill.safe");
     result.appendChild(pill);
 
     const details = document.createElement("td");
-    if (e.verdict === "blocked") {
+    if (blocked) {
       const pct = Math.round((e.confidence || 0) * 100);
+      const cat = e.category && e.category !== "none" ? e.category : "generic";
       const label = document.createElement("div");
       label.className = "detail-label";
-      label.textContent = `${e.category_label} · ${pct}% likelihood`;
+      label.textContent = `${t(`finding.${cat}.label`)} · ${pct}% ${t("mon.likelihood")}`;
       details.appendChild(label);
       if (e.excerpt) {
         const ex = document.createElement("div");
@@ -105,7 +101,9 @@ function renderLog(events) {
         details.appendChild(ex);
       }
     } else {
-      details.innerHTML = '<span class="detail-muted">No threat found</span>';
+      const span = document.createElement("span");
+      span.className = "detail-muted"; span.textContent = t("mon.noThreat");
+      details.appendChild(span);
     }
 
     tr.appendChild(when); tr.appendChild(doc); tr.appendChild(team);
@@ -118,12 +116,10 @@ function formatWhen(iso) {
   if (!iso) return "—";
   const d = new Date(iso);
   if (isNaN(d)) return iso;
-  const diffMs = Date.now() - d.getTime();
-  const hrs = Math.round(diffMs / 3.6e6);
-  if (hrs < 1) return "just now";
-  if (hrs < 24) return hrs + "h ago";
-  const days = Math.round(hrs / 24);
-  return days + "d ago";
+  const hrs = Math.round((Date.now() - d.getTime()) / 3.6e6);
+  if (hrs < 1) return t("time.now");
+  if (hrs < 24) return hrs + t("time.h");
+  return Math.round(hrs / 24) + t("time.d");
 }
 
 async function signOut() {
@@ -132,12 +128,13 @@ async function signOut() {
 }
 
 async function init() {
+  applyStaticI18n();
   try {
     const res = await fetch("/api/me");
     if (res.status === 401) { window.location.href = "/login"; return; }
     const me = await res.json();
     if (me.team !== "security") { window.location.href = "/"; return; }
-    $("identity").textContent = `${me.name} · ${me.team_meta.label}`;
+    $("identity").textContent = `${me.name} · ${t("team.security.label")}`;
   } catch (_) { window.location.href = "/login"; return; }
   $("refresh-btn").addEventListener("click", load);
   $("signout").addEventListener("click", signOut);

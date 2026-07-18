@@ -30,6 +30,7 @@ build:
 
 run: build stop
 	docker run -d --name $(NAME) -p $(PORT):8000 \
+		-v cortis-data:/app/data \
 		$(if $(ENVFILE),--env-file .env,) \
 		$(if $(OPENAI_API_KEY),-e OPENAI_API_KEY,) \
 		$(IMAGE)

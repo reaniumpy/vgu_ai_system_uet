@@ -12,24 +12,28 @@
       <span class="brand-mark" aria-hidden="true">🛡️</span>
       <div>
         <div class="brand-name">cortis</div>
-        <div class="brand-sub">Document Safety Check</div>
+        <div class="brand-sub" data-i18n="brand.sub">Document Safety Check</div>
       </div>
     </div>
+    <nav class="topnav">
+      <button id="lang-toggle" class="link-btn" type="button">Tiếng Việt</button>
+    </nav>
   </header>
 
   <main class="login-wrap">
     <div class="card login-card">
-      <h1 class="card-title">Sign in</h1>
-      <p class="login-lead">Choose your account to open your team's workspace.</p>
+      <h1 class="card-title" data-i18n="login.title">Sign in</h1>
+      <p class="login-lead" data-i18n="login.lead">Choose your account to open your team's workspace.</p>
       <ul id="account-list" class="account-list" aria-busy="true">
-        <li class="account-loading">Loading accounts…</li>
+        <li class="account-loading" data-i18n="login.loading">Loading accounts…</li>
       </ul>
-      <p class="login-note">Demo sign-in — no password required. Single sign-on is a
+      <p class="login-note" data-i18n="login.note">Demo sign-in — no password required. Single sign-on is a
         production follow-up.</p>
     </div>
   </main>
 
   <footer class="footer">cortis · a prompt-injection guard for non-technical teams</footer>
+  <script src="/static/i18n.js"></script>
   <script src="/static/login.js"></script>
 </body>
 </html>

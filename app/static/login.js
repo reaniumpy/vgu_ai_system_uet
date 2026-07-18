@@ -1,14 +1,16 @@
 "use strict";
 
+const { t, applyStaticI18n } = window.I18N;
 const TEAM_ICON = { hr: "👥", legal: "⚖️", finance: "💳", security: "🛡️" };
 
 async function init() {
+  applyStaticI18n();
   const list = document.getElementById("account-list");
   let accounts = [];
   try {
     accounts = (await (await fetch("/api/accounts")).json()).accounts;
   } catch (_) {
-    list.innerHTML = '<li class="account-loading">Couldn\'t load accounts. Refresh to retry.</li>';
+    list.innerHTML = `<li class="account-loading">${t("login.loading")}</li>`;
     return;
   }
   list.innerHTML = "";
@@ -25,7 +27,7 @@ async function init() {
     btn.querySelector(".ac-avatar").textContent = TEAM_ICON[a.team] || "👤";
     btn.querySelector(".ac-name").textContent = a.name;
     btn.querySelector(".ac-title").textContent = a.title;
-    btn.querySelector(".ac-team").textContent = a.team_label;
+    btn.querySelector(".ac-team").textContent = t(`team.${a.team}.label`);
     btn.addEventListener("click", () => signIn(a.id, btn));
     li.appendChild(btn);
     list.appendChild(li);
@@ -42,7 +44,7 @@ async function signIn(accountId, btn) {
     if (res.ok && data.redirect) { window.location.href = data.redirect; return; }
   } catch (_) { /* fall through */ }
   btn.disabled = false;
-  alert("Sign-in failed. Please try again.");
+  alert(t("login.failed"));
 }
 
 init();

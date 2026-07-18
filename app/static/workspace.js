@@ -1,41 +1,43 @@
 "use strict";
 
 const $ = (id) => document.getElementById(id);
+const { t, currentLang, applyStaticI18n } = window.I18N;
 const KIND_ICON = { "PDF document": "📕", "Word document": "📘", "Text document": "📄" };
 
-let me = null;                 // {team, team_meta}
-let current = null;            // context of the doc open in the modal
-
-const RESULT_LABEL = { hr: "Candidate fit", legal: "Contract review", finance: "Invoice details" };
-const ACTION_NOTE = {
-  hr: "cortis will check this résumé for hidden instructions, then assess how well the candidate fits this role.",
-  legal: "cortis will check this agreement for hidden instructions, then summarise the key terms and anything worth a closer look.",
-  finance: "cortis will check this invoice for hidden instructions, then pull out the details for payment.",
-};
+let me = null;
 
 // ── Setup ────────────────────────────────────────────────────────────────
 async function init() {
+  applyStaticI18n();
   try {
     const res = await fetch("/api/me");
     if (res.status === 401) { window.location.href = "/login"; return; }
     me = await res.json();
   } catch (_) { window.location.href = "/login"; return; }
 
-  const tm = me.team_meta;
-  $("identity").textContent = `${me.name} · ${tm.label}`;
-  $("ws-title").textContent = tm.title;
-  $("ws-blurb").textContent = tm.blurb;
+  $("identity").textContent = `${me.name} · ${t(`team.${me.team}.label`)}`;
+  $("ws-title").textContent = t(`team.${me.team}.title`);
+  $("ws-blurb").textContent = t(`team.${me.team}.blurb`);
 
   $("signout").addEventListener("click", signOut);
-  $("modal-close").addEventListener("click", closeDoc);
-  $("doc-modal").addEventListener("click", (e) => { if (e.target === $("doc-modal")) closeDoc(); });
+  $("help-btn").addEventListener("click", openHelp);
+  $("help-close").addEventListener("click", () => hideModal("help-modal"));
+  $("help-modal").addEventListener("click", (e) => { if (e.target === $("help-modal")) hideModal("help-modal"); });
+  $("modal-close").addEventListener("click", () => hideModal("doc-modal"));
+  $("doc-modal").addEventListener("click", (e) => { if (e.target === $("doc-modal")) hideModal("doc-modal"); });
   $("paste-btn").addEventListener("click", openPaste);
-  $("paste-close").addEventListener("click", closePaste);
-  $("paste-cancel").addEventListener("click", closePaste);
-  $("paste-modal").addEventListener("click", (e) => { if (e.target === $("paste-modal")) closePaste(); });
+  $("paste-close").addEventListener("click", () => hideModal("paste-modal"));
+  $("paste-cancel").addEventListener("click", () => hideModal("paste-modal"));
+  $("paste-modal").addEventListener("click", (e) => { if (e.target === $("paste-modal")) hideModal("paste-modal"); });
   $("paste-run").addEventListener("click", runPaste);
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeDoc(); closePaste(); } });
+  $("onboard-dismiss").addEventListener("click", dismissOnboard);
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeAnyModal(); });
 
+  if (!localStorage.getItem("cortis_onboarded")) $("onboard").hidden = false;
+  if (!sessionStorage.getItem("cortis_welcomed")) {
+    sessionStorage.setItem("cortis_welcomed", "1");
+    toast(`${t("toast.welcome")} ${me.name}`);
+  }
   loadWorkspace();
 }
 
@@ -44,17 +46,22 @@ async function signOut() {
   window.location.href = "/login";
 }
 
-// ── Render the team's documents ─────────────────────────────────────────────
+function dismissOnboard() { localStorage.setItem("cortis_onboarded", "1"); $("onboard").hidden = true; }
+
+// ── Documents ────────────────────────────────────────────────────────────
 async function loadWorkspace() {
   const docs = $("docs");
   let data;
   try {
     data = await (await fetch("/api/workspace")).json();
   } catch (_) {
-    docs.innerHTML = '<p class="loading-line">Couldn\'t load your documents. Refresh to retry.</p>';
+    docs.innerHTML = `<p class="loading-line">${t("ws.loadFail")}</p>`;
     return;
   }
   docs.innerHTML = "";
+  const empty = (data.mode === "grouped" && !data.groups.length) ||
+                (data.mode === "list" && !data.docs.length);
+  if (empty) { docs.innerHTML = `<p class="empty-state">${t("ws.empty")}</p>`; return; }
 
   if (data.mode === "grouped") {
     for (const g of data.groups) docs.appendChild(renderGroup(g));
@@ -73,22 +80,18 @@ function renderGroup(g) {
   head.className = "position-head";
   head.innerHTML = `<div class="position-title"></div><div class="position-dept"></div>`;
   head.querySelector(".position-title").textContent = g.title;
-  head.querySelector(".position-dept").textContent = g.department + " · " + g.docs.length +
-    " applicant" + (g.docs.length === 1 ? "" : "s");
+  const word = g.docs.length === 1 ? t("ws.applicant") : t("ws.applicants");
+  head.querySelector(".position-dept").textContent = `${g.department} · ${g.docs.length} ${word}`;
   sec.appendChild(head);
 
   const req = document.createElement("ul");
   req.className = "position-req";
-  for (const r of g.requirements) {
-    const li = document.createElement("li"); li.textContent = r; req.appendChild(li);
-  }
+  for (const r of g.requirements) { const li = document.createElement("li"); li.textContent = r; req.appendChild(li); }
   sec.appendChild(req);
 
   const grid = document.createElement("div");
   grid.className = "doc-grid";
-  for (const d of g.docs) {
-    grid.appendChild(renderCard(d, { position: g }));
-  }
+  for (const d of g.docs) grid.appendChild(renderCard(d, { position: g }));
   sec.appendChild(grid);
   return sec;
 }
@@ -108,9 +111,8 @@ function renderCard(d, extra) {
   return card;
 }
 
-// ── Document modal ──────────────────────────────────────────────────────────
+// ── Document modal ─────────────────────────────────────────────────────────
 function openDoc(d, extra) {
-  current = { id: d.id, label: d.label };
   $("modal-title").textContent = d.label;
   const body = $("modal-body");
   body.innerHTML = "";
@@ -126,58 +128,53 @@ function openDoc(d, extra) {
 
   if (me.team === "hr" && extra.position) {
     const p = extra.position;
-    ctx.appendChild(line("Candidate", d.label));
-    ctx.appendChild(line("Applying for", `${p.title} · ${p.department}`));
+    ctx.appendChild(line(t("modal.candidate"), d.label));
+    ctx.appendChild(line(t("modal.applyingFor"), `${p.title} · ${p.department}`));
     const jd = document.createElement("div"); jd.className = "ctx-jd";
-    const jk = document.createElement("div"); jk.className = "ctx-k"; jk.textContent = "Role requirements";
+    const jk = document.createElement("div"); jk.className = "ctx-k"; jk.textContent = t("modal.roleReq");
     const jl = document.createElement("ul");
     for (const r of p.requirements) { const li = document.createElement("li"); li.textContent = r; jl.appendChild(li); }
     jd.appendChild(jk); jd.appendChild(jl); ctx.appendChild(jd);
   } else {
-    if (extra.sub) ctx.appendChild(line(me.team === "legal" ? "Agreement" : "Invoice", d.label + " · " + extra.sub));
-    ctx.appendChild(line("File", `${d.filename} · ${d.kind} · ${d.size_kb} KB`));
+    if (extra.sub) ctx.appendChild(line(me.team === "legal" ? t("modal.agreement") : t("modal.invoice"), d.label + " · " + extra.sub));
+    ctx.appendChild(line(t("modal.file"), `${d.filename} · ${d.kind} · ${d.size_kb} KB`));
   }
   body.appendChild(ctx);
 
   const note = document.createElement("p");
   note.className = "ctx-note";
-  note.textContent = ACTION_NOTE[me.team] || "";
+  note.textContent = t(`note.${me.team}`);
   body.appendChild(note);
 
   const foot = document.createElement("div");
   foot.className = "modal-foot";
-  const cancel = document.createElement("button");
-  cancel.className = "secondary-btn"; cancel.type = "button"; cancel.textContent = "Cancel";
-  cancel.addEventListener("click", closeDoc);
-  const action = document.createElement("button");
-  action.className = "primary-btn"; action.type = "button";
-  action.textContent = me.team_meta.action;
-  action.addEventListener("click", () => doCheck({ item: d.id }, action));
+  const cancel = mkBtn("secondary-btn", t("btn.cancel"), () => hideModal("doc-modal"));
+  const action = mkBtn("primary-btn", t(`team.${me.team}.action`), () => doCheck({ item: d.id }, action));
   foot.appendChild(cancel); foot.appendChild(action);
   body.appendChild(foot);
 
-  $("doc-modal").hidden = false;
+  showModal("doc-modal");
 }
 
-function closeDoc() { $("doc-modal").hidden = true; current = null; }
-
-// ── Run a check and render the result inside the modal ──────────────────────
+// ── Run a check + render result ─────────────────────────────────────────────
 async function doCheck(payload, triggerBtn) {
   const body = $("modal-body");
   if (triggerBtn) triggerBtn.disabled = true;
-  body.innerHTML = '<div class="status"><div class="spinner"></div><span>Checking this document…</span></div>';
+  body.innerHTML = `<div class="status"><div class="spinner"></div><span>${t("check.status")}</span></div>`;
 
   const fd = new FormData();
   if (payload.item) fd.append("item", payload.item);
   if (payload.text) fd.append("text", payload.text);
+  fd.append("lang", currentLang());
 
   let data;
   try {
     const res = await fetch("/api/check", { method: "POST", body: fd });
     data = await res.json();
-    if (!res.ok) { renderModalError(data.error || "Something went wrong."); return; }
+    if (!res.ok) { renderModalError(data.error || t("err.generic")); return; }
   } catch (_) {
-    renderModalError("We couldn't reach the safety checker. Please try again.");
+    renderModalError(t("err.network"));
+    toast(t("err.network"), "error");
     return;
   }
   renderResult(data);
@@ -185,6 +182,7 @@ async function doCheck(payload, triggerBtn) {
 
 function renderResult(data) {
   const safe = data.verdict === "safe";
+  const cat = data.category && data.category !== "none" ? data.category : "generic";
   const body = $("modal-body");
   body.innerHTML = "";
 
@@ -193,36 +191,45 @@ function renderResult(data) {
   const head = document.createElement("div");
   head.className = "verdict-head";
   head.innerHTML = `<div class="verdict-icon">${safe ? "✓" : "✕"}</div><h2 class="verdict-title"></h2>`;
-  head.querySelector(".verdict-title").textContent = data.headline;
+  head.querySelector(".verdict-title").textContent = t(`verdict.${data.verdict}.headline`);
   v.appendChild(head);
 
   const expl = document.createElement("div");
-  expl.className = "verdict-body"; expl.textContent = data.explanation;
+  expl.className = "verdict-body";
+  expl.textContent = safe ? t("verdict.safe.explanation") : t(`finding.${cat}.explanation`);
   v.appendChild(expl);
 
   const src = document.createElement("div");
-  src.className = "source-line"; src.textContent = "Checked: " + data.source;
+  src.className = "source-line";
+  src.textContent = `${t("source.checked")} ${data.source}`;
   v.appendChild(src);
 
-  if (!safe && data.next_step) {
+  // Inline "why blocked" — show the flagged passage in plain view (H9).
+  if (!safe && data.matched_excerpt) {
+    const flag = document.createElement("div");
+    flag.className = "flagged";
+    const ft = document.createElement("div"); ft.className = "flagged-title"; ft.textContent = t("flagged.title");
+    const fx = document.createElement("blockquote"); fx.className = "flagged-text"; fx.textContent = data.matched_excerpt;
+    flag.appendChild(ft); flag.appendChild(fx); v.appendChild(flag);
+  }
+
+  if (!safe) {
     const ns = document.createElement("div");
     ns.className = "next-step";
-    ns.innerHTML = "<strong>What to do next</strong>";
-    ns.appendChild(document.createTextNode(data.next_step));
+    const strong = document.createElement("strong"); strong.textContent = t("nextstep.title");
+    ns.appendChild(strong); ns.appendChild(document.createTextNode(t("nextstep.blocked")));
     v.appendChild(ns);
   }
-  v.appendChild(buildTech(data));
+  v.appendChild(buildTech(data, cat));
   body.appendChild(v);
 
   if (safe && data.assistant) body.appendChild(buildAssistant(data.assistant));
 
   const foot = document.createElement("div");
   foot.className = "modal-foot";
-  const done = document.createElement("button");
-  done.className = "primary-btn"; done.type = "button"; done.textContent = "Done";
-  done.addEventListener("click", closeDoc);
-  foot.appendChild(done);
+  foot.appendChild(mkBtn("primary-btn", t("btn.done"), () => hideModal("doc-modal")));
   body.appendChild(foot);
+  refocusModal("doc-modal");
 }
 
 function buildAssistant(a) {
@@ -230,8 +237,9 @@ function buildAssistant(a) {
   wrap.className = "assistant";
   const head = document.createElement("div");
   head.className = "assistant-head";
-  head.innerHTML = `<span>🤖 </span><span class="badge">✓ Checked &amp; safe</span>`;
-  head.firstChild.textContent = "🤖 " + (RESULT_LABEL[me.team] || "AI assistant");
+  const label = document.createElement("span"); label.textContent = "🤖 " + t(`result.${me.team}`);
+  const badge = document.createElement("span"); badge.className = "badge"; badge.textContent = "✓ " + t("badge.checkedSafe");
+  head.appendChild(label); head.appendChild(badge);
   const body = document.createElement("div");
   body.className = "assistant-body" + (a.status === "ok" ? "" : " muted");
   body.textContent = a.text;
@@ -239,16 +247,17 @@ function buildAssistant(a) {
   return wrap;
 }
 
-function buildTech(data) {
+function buildTech(data, cat) {
   const details = document.createElement("details");
   details.className = "tech";
-  const summary = document.createElement("summary"); summary.textContent = "Technical details";
+  const summary = document.createElement("summary"); summary.textContent = t("tech.summary");
   details.appendChild(summary);
   const grid = document.createElement("dl"); grid.className = "tech-grid";
+  const safe = data.verdict === "safe";
   const rows = [
-    ["Decision", data.verdict === "safe" ? "Allowed through" : "Blocked"],
-    ["Finding", data.category_label],
-    ["Injection likelihood", Math.round((data.confidence || 0) * 100) + "%"],
+    [t("tech.decision"), safe ? t("tech.allowed") : t("tech.blocked")],
+    [t("tech.finding"), safe ? t("mon.noThreat") : t(`finding.${cat}.label`)],
+    [t("tech.likelihood"), Math.round((data.confidence || 0) * 100) + "%"],
   ];
   for (const [k, val] of rows) {
     const dt = document.createElement("dt"); dt.textContent = k;
@@ -257,7 +266,7 @@ function buildTech(data) {
   }
   if (data.matched_excerpt) {
     const ex = document.createElement("div"); ex.className = "tech-excerpt";
-    ex.textContent = "Most suspicious passage:\n" + data.matched_excerpt;
+    ex.textContent = t("tech.passage") + "\n" + data.matched_excerpt;
     grid.appendChild(ex);
   }
   details.appendChild(grid);
@@ -265,28 +274,83 @@ function buildTech(data) {
 }
 
 function renderModalError(msg) {
-  $("modal-body").innerHTML = "";
+  const body = $("modal-body");
+  body.innerHTML = "";
   const div = document.createElement("div");
   div.className = "inline-error"; div.textContent = msg;
-  $("modal-body").appendChild(div);
+  body.appendChild(div);
   const foot = document.createElement("div"); foot.className = "modal-foot";
-  const b = document.createElement("button"); b.className = "secondary-btn"; b.textContent = "Close";
-  b.addEventListener("click", closeDoc); foot.appendChild(b);
-  $("modal-body").appendChild(foot);
+  foot.appendChild(mkBtn("secondary-btn", t("btn.close"), () => hideModal("doc-modal")));
+  body.appendChild(foot);
+  refocusModal("doc-modal");
 }
 
 // ── Paste text ──────────────────────────────────────────────────────────────
-function openPaste() { $("paste-text").value = ""; $("paste-modal").hidden = false; $("paste-text").focus(); }
-function closePaste() { $("paste-modal").hidden = true; }
-
+function openPaste() { $("paste-text").value = ""; showModal("paste-modal"); }
 async function runPaste() {
   const text = $("paste-text").value.trim();
   if (!text) { $("paste-text").focus(); return; }
-  closePaste();
-  current = { label: "Pasted text" };
-  $("modal-title").textContent = "Pasted text";
-  $("doc-modal").hidden = false;
+  hideModal("paste-modal");
+  $("modal-title").textContent = t("paste.title");
+  showModal("doc-modal");
   doCheck({ text });
+}
+
+// ── Help ─────────────────────────────────────────────────────────────────────
+function openHelp() {
+  $("help-general").textContent = t("help.general");
+  $("help-team").textContent = t(`help.${me.team}`);
+  showModal("help-modal");
+}
+
+// ── Toasts ───────────────────────────────────────────────────────────────────
+function toast(msg, type) {
+  const el = document.createElement("div");
+  el.className = "toast" + (type === "error" ? " toast-error" : "");
+  el.textContent = msg;
+  $("toasts").appendChild(el);
+  setTimeout(() => el.classList.add("show"), 10);
+  setTimeout(() => { el.classList.remove("show"); setTimeout(() => el.remove(), 300); }, 3500);
+}
+
+// ── Modal helpers (focus trap for accessibility) ─────────────────────────────
+let lastFocused = null;
+function focusables(modal) {
+  return [...modal.querySelectorAll('button, [href], input, textarea, select, [tabindex]:not([tabindex="-1"])')]
+    .filter((x) => !x.disabled && x.offsetParent !== null);
+}
+function trapKeydown(e) {
+  if (e.key !== "Tab") return;
+  const list = focusables(e.currentTarget);
+  if (!list.length) return;
+  const first = list[0], last = list[list.length - 1];
+  if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+}
+function showModal(overlayId) {
+  lastFocused = document.activeElement;
+  const overlay = $(overlayId); overlay.hidden = false;
+  const modal = overlay.querySelector(".modal");
+  modal.addEventListener("keydown", trapKeydown);
+  const f = focusables(modal); if (f.length) f[0].focus();
+}
+function refocusModal(overlayId) {
+  const f = focusables($(overlayId).querySelector(".modal")); if (f.length) f[0].focus();
+}
+function hideModal(overlayId) {
+  const overlay = $(overlayId); overlay.hidden = true;
+  overlay.querySelector(".modal").removeEventListener("keydown", trapKeydown);
+  if (lastFocused && lastFocused.focus) lastFocused.focus();
+}
+function closeAnyModal() {
+  for (const id of ["doc-modal", "paste-modal", "help-modal"]) if (!$(id).hidden) hideModal(id);
+}
+
+function mkBtn(cls, label, onClick) {
+  const b = document.createElement("button");
+  b.className = cls; b.type = "button"; b.textContent = label;
+  b.addEventListener("click", onClick);
+  return b;
 }
 
 init();
