@@ -16,7 +16,37 @@ async function load() {
   renderTiles(data);
   renderBars($("by-team"), data.by_team);
   renderBars($("by-category"), data.by_category);
+  renderReports(data.reports);
   renderLog(data.recent);
+}
+
+function renderReports(reports) {
+  const box = $("reports-list");
+  box.innerHTML = "";
+  if (!reports || reports.length === 0) {
+    box.innerHTML = `<div class="empty">${t("mon.reports.none")}</div>`;
+    return;
+  }
+  for (const r of reports) {
+    const item = document.createElement("div");
+    item.className = "report-item";
+    const head = document.createElement("div"); head.className = "report-item-head";
+    const badge = document.createElement("span");
+    badge.className = "report-badge report-badge-" + (r.report_type || "");
+    badge.textContent = t(`mon.report.${r.report_type}`);
+    const src = document.createElement("span"); src.className = "report-src"; src.textContent = r.source || "—";
+    const when = document.createElement("span"); when.className = "report-when nowrap"; when.textContent = formatWhen(r.ts);
+    head.appendChild(badge); head.appendChild(src); head.appendChild(when);
+    const meta = document.createElement("div"); meta.className = "report-meta";
+    meta.textContent = `${r.team || "—"} · ${r.user || "—"}`;
+    item.appendChild(head); item.appendChild(meta);
+    if (r.reason) {
+      const reason = document.createElement("div");
+      reason.className = "report-reason-text"; reason.textContent = r.reason;
+      item.appendChild(reason);
+    }
+    box.appendChild(item);
+  }
 }
 
 function renderTiles(d) {

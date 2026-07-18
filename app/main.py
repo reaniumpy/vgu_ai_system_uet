@@ -234,6 +234,33 @@ async def api_check(request: Request, item: str = Form(""), jd: str = Form(""),
     return JSONResponse(payload)
 
 
+_REPORT_TYPES = {"false_positive", "threat", "missed_threat"}
+
+
+@app.post("/api/report")
+async def api_report(request: Request, report_type: str = Form(...), reason: str = Form(""),
+                     source: str = Form(""), verdict: str = Form(""), category: str = Form(""),
+                     confidence: str = Form(""), excerpt: str = Form("")):
+    """A team member flags a result for Security — false positive or escalation."""
+    acct = _current(request)
+    if not acct:
+        return JSONResponse({"error": "Please sign in again."}, status_code=401)
+    if report_type not in _REPORT_TYPES:
+        return _error("Unknown report type.")
+    try:
+        conf = float(confidence) if confidence else None
+    except ValueError:
+        conf = None
+    logstore.record_report(
+        report_type=report_type, reason=reason.strip()[:500],
+        source=(source.strip()[:200] or "(unspecified)"),
+        team=workspaces.TEAMS[acct["team"]]["label"], user=acct["name"],
+        verdict=(verdict or None), category=(category or None), confidence=conf,
+        excerpt=(excerpt.strip()[:300] or None),
+    )
+    return JSONResponse({"ok": True})
+
+
 # ── Monitoring API (Security only) ───────────────────────────────────────────
 @app.get("/api/stats")
 def api_stats(request: Request):

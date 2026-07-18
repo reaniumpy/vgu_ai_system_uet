@@ -283,6 +283,11 @@ function fillRow(rowEl, d) {
       flag.appendChild(ft); flag.appendChild(fx); body.appendChild(flag);
     }
   }
+  const name = rowEl.querySelector(".crh-name").textContent;
+  body.appendChild(reportControl({
+    source: name, verdict: d.verdict, category: d.category,
+    confidence: d.confidence, excerpt: d.matched_excerpt,
+  }));
 }
 
 // ══════════════════════════ Legal / Finance: samples + upload ═══════════════
@@ -394,6 +399,10 @@ function renderResult(data) {
   v.appendChild(buildTech(data, cat));
   body.appendChild(v);
   if (safe && data.assistant) body.appendChild(buildAssistant(data.assistant));
+  body.appendChild(reportControl({
+    source: data.source, verdict: data.verdict, category: data.category,
+    confidence: data.confidence, excerpt: data.matched_excerpt,
+  }));
   const foot = document.createElement("div"); foot.className = "modal-foot";
   foot.appendChild(mkBtn("primary-btn", t("btn.done"), () => hideModal("doc-modal")));
   body.appendChild(foot);
@@ -445,6 +454,55 @@ function openHelp() {
   $("help-general").textContent = t("help.general");
   $("help-team").textContent = t(`help.${me.team}`);
   showModal("help-modal");
+}
+
+// ── Report to Security (closes the loop with the monitoring team) ─────────────
+// snapshot: {source, verdict, category, confidence, excerpt}. A blocked result can
+// be flagged as a false positive or escalated as a real threat; a safe result can
+// be reported as a possible miss. The report lands in the Security monitoring feed.
+function reportControl(snapshot) {
+  const wrap = document.createElement("div"); wrap.className = "report";
+  const openBtn = () => mkBtn("link-btn report-open", "🚩 " + t("report.btn"), openForm);
+  const reset = () => { wrap.innerHTML = ""; wrap.appendChild(openBtn()); };
+
+  function openForm() {
+    wrap.innerHTML = "";
+    const form = document.createElement("div"); form.className = "report-form";
+    const sel = document.createElement("select"); sel.className = "report-reason";
+    sel.setAttribute("aria-label", t("report.title"));
+    const types = snapshot.verdict === "safe" ? ["missed_threat"] : ["false_positive", "threat"];
+    for (const ty of types) {
+      const o = document.createElement("option"); o.value = ty; o.textContent = t(`report.reason.${ty}`); sel.appendChild(o);
+    }
+    const note = document.createElement("input"); note.type = "text"; note.className = "report-note";
+    note.placeholder = t("report.note.ph"); note.maxLength = 500;
+    const actions = document.createElement("div"); actions.className = "report-actions";
+    actions.appendChild(mkBtn("primary-btn small", t("report.send"), () => submit(sel.value, note.value)));
+    actions.appendChild(mkBtn("secondary-btn small", t("report.cancel"), reset));
+    form.appendChild(sel); form.appendChild(note); form.appendChild(actions);
+    wrap.appendChild(form); sel.focus();
+  }
+
+  async function submit(type, reason) {
+    const fd = new FormData();
+    fd.append("report_type", type);
+    fd.append("reason", reason || "");
+    fd.append("source", snapshot.source || "");
+    fd.append("verdict", snapshot.verdict || "");
+    fd.append("category", snapshot.category || "");
+    fd.append("confidence", snapshot.confidence != null ? String(snapshot.confidence) : "");
+    fd.append("excerpt", snapshot.excerpt || "");
+    try {
+      const res = await fetch("/api/report", { method: "POST", body: fd });
+      if (!res.ok) throw new Error();
+      wrap.innerHTML = ""; const done = document.createElement("span");
+      done.className = "report-done"; done.textContent = t("report.sent"); wrap.appendChild(done);
+      toast(t("report.sent"));
+    } catch (_) { toast(t("report.error"), "error"); }
+  }
+
+  wrap.appendChild(openBtn());
+  return wrap;
 }
 
 // ── Toasts ───────────────────────────────────────────────────────────────────

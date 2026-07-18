@@ -31,6 +31,7 @@ def record_check(*, source: str, team: str, result: dict, user: str = "") -> dic
     event = {
         "id": uuid.uuid4().hex[:12],
         "ts": _now_iso(),
+        "kind": "check",
         "source": source,
         "team": team,
         "user": user,
@@ -39,6 +40,28 @@ def record_check(*, source: str, team: str, result: dict, user: str = "") -> dic
         "category_label": result.get("category_label"),
         "confidence": result.get("confidence"),
         "excerpt": result.get("matched_excerpt"),
+        "seed": False,
+    }
+    _append(event)
+    return event
+
+
+def record_report(*, report_type: str, reason: str, source: str, team: str, user: str,
+                   verdict=None, category=None, confidence=None, excerpt=None) -> dict:
+    """Append a team member's report on a result (false positive / escalation)."""
+    event = {
+        "id": uuid.uuid4().hex[:12],
+        "ts": _now_iso(),
+        "kind": "report",
+        "report_type": report_type,      # false_positive | threat | missed_threat
+        "reason": reason,
+        "source": source,
+        "team": team,
+        "user": user,
+        "verdict": verdict,
+        "category": category,
+        "confidence": confidence,
+        "excerpt": excerpt,
         "seed": False,
     }
     _append(event)
@@ -75,8 +98,10 @@ def read_events(limit: int = 200) -> list:
 def stats() -> dict:
     """Aggregates for the monitoring dashboard."""
     events = read_events(limit=10_000)
-    total = len(events)
-    blocked = [e for e in events if e.get("verdict") == "blocked"]
+    checks = [e for e in events if e.get("kind", "check") == "check"]
+    reports = [e for e in events if e.get("kind") == "report"]
+    total = len(checks)
+    blocked = [e for e in checks if e.get("verdict") == "blocked"]
     safe_count = total - len(blocked)
 
     by_team: dict = {}
@@ -89,7 +114,7 @@ def stats() -> dict:
         label = e.get("category_label") or "Hidden instruction found"
         by_category[label] = by_category.get(label, 0) + 1
 
-    has_sample = any(e.get("seed") for e in events)
+    has_sample = any(e.get("seed") for e in checks)
 
     return {
         "total": total,
@@ -97,7 +122,9 @@ def stats() -> dict:
         "blocked": len(blocked),
         "by_team": sorted(by_team.items(), key=lambda kv: kv[1], reverse=True),
         "by_category": sorted(by_category.items(), key=lambda kv: kv[1], reverse=True),
-        "recent": events[:50],
+        "recent": checks[:50],
+        "reports": reports[:20],
+        "reports_count": len(reports),
         "has_sample": has_sample,
     }
 

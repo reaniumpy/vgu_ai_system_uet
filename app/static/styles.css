@@ -501,3 +501,31 @@ body {
 .fit-partial { color: #9a6a00; background: #fff5e0; border-color: #f0d79a; }
 .fit-weak { color: #7a2a2a; background: #fbeaea; border-color: #f0c4c4; }
 .fit-unknown { color: var(--ink-soft); background: #f1f4fb; border-color: var(--line); }
+
+/* ── Report to Security ──────────────────────────────────── */
+.report { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--line); }
+.report-open { color: var(--ink-soft); font-size: 13px; }
+.report-form { display: flex; flex-direction: column; gap: 8px; }
+.report-reason, .report-note {
+  width: 100%; padding: 8px 10px; font: inherit; font-size: 13px;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--ink);
+}
+.report-actions { display: flex; gap: 8px; }
+.primary-btn.small, .secondary-btn.small { padding: 7px 13px; font-size: 13px; }
+.report-done { font-size: 13px; font-weight: 600; color: var(--safe); }
+.report-reason:focus-visible, .report-note:focus-visible {
+  outline: 2px solid var(--brand); outline-offset: 1px;
+}
+
+/* ── Monitoring: reports from teams ──────────────────────── */
+.reports-list { display: flex; flex-direction: column; gap: 10px; }
+.report-item { border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+.report-item-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.report-src { font-weight: 600; font-size: 14px; flex: 1; min-width: 140px; word-break: break-all; }
+.report-when { font-size: 12px; color: var(--ink-soft); }
+.report-meta { font-size: 12px; color: var(--ink-soft); margin-top: 4px; }
+.report-reason-text { font-size: 13px; color: var(--ink); margin-top: 8px; padding: 8px 10px; background: var(--bg); border-radius: 8px; }
+.report-badge { font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 999px; border: 1px solid; white-space: nowrap; }
+.report-badge-false_positive { color: #9a6a00; background: #fff5e0; border-color: #f0d79a; }
+.report-badge-threat { color: var(--block); background: var(--block-bg); border-color: var(--block-line); }
+.report-badge-missed_threat { color: #6d3bbf; background: #efe8fb; border-color: #d8c7f2; }
