@@ -43,10 +43,11 @@ def _get_client():
     return _client
 
 
-def run(request: str, document: str) -> dict:
+def run(request: str, document: str, context: str = None) -> dict:
     """Ask the assistant to act on a safe document.
 
-    Returns ``{"status": "ok"|"unconfigured"|"error", "text": ...}``.
+    ``context`` is optional reference material (e.g. the job description a résumé
+    is assessed against). Returns ``{"status": "ok"|"unconfigured"|"error", "text": ...}``.
     """
     request = (request or "").strip() or "Summarise the key points of this document."
 
@@ -64,8 +65,9 @@ def run(request: str, document: str) -> dict:
     if client is None:
         return {"status": "error", "text": "The AI assistant is temporarily unavailable."}
 
+    reference = f"\n\n--- Reference material ---\n{context}" if context else ""
     user_content = (
-        f"Task from the user:\n{request}\n\n"
+        f"Task from the user:\n{request}{reference}\n\n"
         f"--- Document (already screened as safe) ---\n{document}"
     )
     try:

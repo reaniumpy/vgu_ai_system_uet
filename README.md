@@ -10,10 +10,10 @@
 
 ## 0. Run it (Docker)
 
-cortis is built as **cortis — "Document Safety Check"**: a FastAPI service that serves a
-single, plain-language web UI. The detection engine is the off-the-shelf DeBERTa-v3
-prompt-injection classifier (`protectai/deberta-v3-base-prompt-injection-v2`), baked into
-the image so the container runs fully offline.
+cortis is a FastAPI service with **role-based workspaces**: a team member signs in and lands
+in a workspace tuned to *their* job, with the DeBERTa-v3 prompt-injection classifier
+(`protectai/deberta-v3-base-prompt-injection-v2`, baked into the image for offline use)
+screening every document before it reaches the AI assistant.
 
 **One command to build & run:**
 
@@ -23,28 +23,28 @@ make run              # builds the image and starts it on http://localhost:8000
 
 (or without make: `docker build -t cortis . && docker run -p 8000:8000 cortis`)
 
-Then open **http://localhost:8000**. The first build downloads the model (~700 MB) into
-the image; after that, start-up is a few seconds.
+Then open **http://localhost:8000** and **sign in** (demo accounts, no password):
 
-- **`/`** — the everyday check screen (Cohort A / non-technical users): paste text or pick a
-  document from the built-in file browser, click **Check this document**, and get a plain
-  **Safe** or **Blocked** answer.
-- **`/admin`** — the monitoring screen (Cohort B / technical staff): recent checks, blocks
-  by team, and what was blocked. Seeded with sample activity on first run so it isn't empty.
+| Account | Team | Workspace |
+|---|---|---|
+| Sophia Tran / Mai Pham | HR | **Candidate screening** — pick a candidate → guard checks the résumé → fit assessment against the position's job description |
+| Nghia Le | Legal | **Contract review** — key terms, obligations, and risk flags |
+| Long Vu | Finance | **Invoice processing** — extract vendor, amounts, totals for payment |
+| An Tran | Security | **Monitoring** — org-wide activity: checks, blocks by team, who checked what |
 
-**Enabling the downstream AI assistant (optional).** On a *safe* document the app forwards
-it to OpenAI/ChatGPT (`gpt-4o-mini` by default) to carry out the user's request (e.g.
-summarise). Provide a key to turn this on — the guard itself works without one:
+Each workspace only shows its own team's documents, and every action is screened first —
+blocked documents never reach the assistant. HR candidates are pre-linked to the role they
+applied for, so the job description is matched automatically (no re-attaching).
 
-```bash
-OPENAI_API_KEY=sk-... make run
-```
+**Enabling the downstream AI assistant (optional).** On a *safe* document the app forwards it
+to OpenAI/ChatGPT (`gpt-4o-mini` by default) for the team's task. Paste your key into the
+git-ignored `.env` (`OPENAI_API_KEY=…`) then `make run`. The guard works without a key.
 
-Sample documents for usability tasks live in [`samples/`](samples/) — a mix of clean and
-hidden-attack résumés, contracts, and invoices with neutral filenames (so a test participant
-can't guess the answer from the name). The **Choose a file…** button in the app opens a
-built-in browser limited to exactly these documents — it never touches the real filesystem.
-Regenerate the PDF samples with `python scripts/build_sample_pdfs.py` (needs `fpdf2`).
+**Production notes.** Sign-in is a passwordless demo picker — swap in real SSO/password auth
+for production, and set `CORTIS_SECRET_KEY` (session-cookie signing). Sample documents live in
+[`samples/{hr,legal,finance}/`](samples/) with neutral filenames (so a test participant can't
+guess the answer). Regenerate the PDF résumés with `python scripts/build_sample_pdfs.py`
+(needs `fpdf2`).
 
 ---
 

@@ -16,8 +16,9 @@
       </div>
     </div>
     <nav class="topnav">
+      <span id="identity" class="identity"></span>
       <button id="refresh-btn" class="link-btn" type="button">Refresh</button>
-      <a class="link-btn" href="/">← Back to checks</a>
+      <button id="signout" class="link-btn" type="button">Sign out</button>
     </nav>
   </header>
 
@@ -44,7 +45,7 @@
       <div class="table-scroll">
         <table class="log-table">
           <thead>
-            <tr><th>When</th><th>Document</th><th>Team</th><th>Result</th><th>Details</th></tr>
+            <tr><th>When</th><th>Document</th><th>Team</th><th>By</th><th>Result</th><th>Details</th></tr>
           </thead>
           <tbody id="log-body"></tbody>
         </table>
@@ -53,6 +54,6 @@
   </main>
 
   <footer class="footer">cortis · monitoring view</footer>
-  <script src="/static/admin.js"></script>
+  <script src="/static/monitoring.js"></script>
 </body>
 </html>

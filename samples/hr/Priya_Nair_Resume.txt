@@ -1,0 +1,24 @@
+PRIYA NAIR
+Senior Software Engineer
+Bengaluru | priya.nair@email.com | (+91) 98••• •••21
+
+PROFESSIONAL SUMMARY
+Backend engineer with 7 years building and operating high-throughput services.
+Owns systems end to end, from design through on-call.
+
+EXPERIENCE
+Senior Backend Engineer - Fintrail (2021-present)
+- Lead engineer for the payments API handling 3M requests/day on AWS.
+- Migrated the core service from Python to Go, cutting p99 latency by 45%.
+- Set up the on-call rotation and incident runbooks for a team of 8.
+
+Backend Engineer - Loginet (2018-2021)
+- Built and owned the notifications platform (PostgreSQL, Redis, RabbitMQ).
+- Introduced integration tests that cut production incidents by a third.
+
+EDUCATION
+B.E. Computer Science - PES University (2018)
+
+SKILLS
+Go, Python, PostgreSQL, Redis, AWS (ECS, RDS, Lambda), Docker, Terraform,
+observability (Prometheus, Grafana).

@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Workspace · cortis</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">🛡️</span>
+      <div>
+        <div class="brand-name">cortis</div>
+        <div class="brand-sub">Document Safety Check</div>
+      </div>
+    </div>
+    <nav class="topnav">
+      <span id="identity" class="identity"></span>
+      <button id="signout" class="link-btn" type="button">Sign out</button>
+    </nav>
+  </header>
+
+  <main class="wrap wrap-wide">
+    <div class="ws-header">
+      <h1 id="ws-title" class="ws-title"></h1>
+      <p id="ws-blurb" class="ws-blurb"></p>
+    </div>
+
+    <section id="docs" class="docs" aria-live="polite">
+      <p class="loading-line">Loading your documents…</p>
+    </section>
+
+    <p class="paste-row">
+      <button id="paste-btn" class="link-btn" type="button">or check other text you've received</button>
+    </p>
+  </main>
+
+  <footer class="footer">cortis · every action is screened before it reaches the AI assistant</footer>
+
+  <!-- Document modal: phase A (context + action) then phase B (result) -->
+  <div id="doc-modal" class="modal-overlay" hidden>
+    <div class="modal wide" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <div class="modal-head">
+        <span id="modal-title"></span>
+        <button id="modal-close" class="chip-x" type="button" aria-label="Close">✕</button>
+      </div>
+      <div id="modal-body" class="modal-body"></div>
+    </div>
+  </div>
+
+  <!-- Paste text modal -->
+  <div id="paste-modal" class="modal-overlay" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="paste-title">
+      <div class="modal-head">
+        <span id="paste-title">Check other text</span>
+        <button id="paste-close" class="chip-x" type="button" aria-label="Close">✕</button>
+      </div>
+      <div class="modal-body">
+        <textarea id="paste-text" class="doc-input" rows="8"
+          placeholder="Paste the text you received here…"></textarea>
+        <div class="modal-foot">
+          <button id="paste-cancel" class="secondary-btn" type="button">Cancel</button>
+          <button id="paste-run" class="primary-btn" type="button">Check this text</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/workspace.js"></script>
+</body>
+</html>

@@ -65,7 +65,7 @@ function renderLog(events) {
   const body = $("log-body");
   body.innerHTML = "";
   if (!events || events.length === 0) {
-    body.innerHTML = '<tr><td colspan="5" class="empty">No activity yet.</td></tr>';
+    body.innerHTML = '<tr><td colspan="6" class="empty">No activity yet.</td></tr>';
     return;
   }
   for (const e of events) {
@@ -80,6 +80,10 @@ function renderLog(events) {
 
     const team = document.createElement("td");
     team.textContent = e.team || "—";
+
+    const by = document.createElement("td");
+    by.textContent = e.user || "—";
+    by.className = "nowrap";
 
     const result = document.createElement("td");
     const pill = document.createElement("span");
@@ -105,7 +109,7 @@ function renderLog(events) {
     }
 
     tr.appendChild(when); tr.appendChild(doc); tr.appendChild(team);
-    tr.appendChild(result); tr.appendChild(details);
+    tr.appendChild(by); tr.appendChild(result); tr.appendChild(details);
     body.appendChild(tr);
   }
 }
@@ -122,5 +126,22 @@ function formatWhen(iso) {
   return days + "d ago";
 }
 
-$("refresh-btn").addEventListener("click", load);
-load();
+async function signOut() {
+  try { await fetch("/api/logout", { method: "POST" }); } catch (_) {}
+  window.location.href = "/login";
+}
+
+async function init() {
+  try {
+    const res = await fetch("/api/me");
+    if (res.status === 401) { window.location.href = "/login"; return; }
+    const me = await res.json();
+    if (me.team !== "security") { window.location.href = "/"; return; }
+    $("identity").textContent = `${me.name} · ${me.team_meta.label}`;
+  } catch (_) { window.location.href = "/login"; return; }
+  $("refresh-btn").addEventListener("click", load);
+  $("signout").addEventListener("click", signOut);
+  load();
+}
+
+init();

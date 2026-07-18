@@ -11,7 +11,8 @@ import os
 
 from fpdf import FPDF
 
-SAMPLES_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "samples")
+# Resume PDFs live in the HR team's folder.
+SAMPLES_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "samples", "hr")
 
 # (filename, title, body). Keep body ASCII — the core PDF fonts are Latin-1 only.
 DOCS = [

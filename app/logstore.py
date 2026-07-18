@@ -26,13 +26,14 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def record_check(*, source: str, team: str, result: dict) -> dict:
+def record_check(*, source: str, team: str, result: dict, user: str = "") -> dict:
     """Append one check result to the log and return the stored event."""
     event = {
         "id": uuid.uuid4().hex[:12],
         "ts": _now_iso(),
         "source": source,
         "team": team,
+        "user": user,
         "verdict": result.get("verdict"),
         "category": result.get("category"),
         "category_label": result.get("category_label"),
