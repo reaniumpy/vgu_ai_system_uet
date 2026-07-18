@@ -60,9 +60,8 @@ def _page(name: str) -> FileResponse:
 # ── Auth routes ──────────────────────────────────────────────────────────────
 @app.get("/login")
 def login_page(request: Request):
-    acct = _current(request)
-    if acct:
-        return RedirectResponse(workspaces.home_path(acct["team"]), status_code=303)
+    # Always show the account picker; if already signed in, login.js marks that
+    # account as current and disables it (you can't re-select the role you're in).
     return _page("login.html")
 
 

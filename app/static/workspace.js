@@ -3,12 +3,43 @@
 const $ = (id) => document.getElementById(id);
 const { t, currentLang, applyStaticI18n } = window.I18N;
 const KIND_ICON = { "PDF document": "📕", "Word document": "📘", "Text document": "📄" };
-const MAX_CVS = 10;
+const MAX_ITEMS = 10;
+
+// Per-team batch config. HR adds a JD section and a fit rating; Legal/Finance
+// offer sample documents to add. Values are i18n keys unless noted (csv* = literal).
+const TEAM = {
+  hr: {
+    hasJD: true, showFit: true, samples: false,
+    section: "hr.cv.section", upload: "hr.cv.upload", hint: "hr.cv.hint", none: "hr.cv.none",
+    screen: "hr.screen", results: "hr.results", need: "hr.needBoth",
+    pass: "hr.pass", fail: "hr.fail",
+    unit: "hr.summary.screened", sPass: "hr.summary.passed", sBlock: "hr.summary.blocked",
+    csvSafe: "Passed", csvBlock: "Not passed - cheating detected",
+  },
+  legal: {
+    hasJD: false, showFit: false, samples: true,
+    section: "legal.section", upload: "legal.upload", hint: "hr.cv.hint", none: "legal.none",
+    screen: "legal.screen", results: "legal.results", need: "legal.need",
+    pass: "batch.safe", fail: "batch.blocked",
+    unit: "legal.unit", sPass: "batch.summary.safe", sBlock: "batch.summary.blocked",
+    csvSafe: "Safe", csvBlock: "Blocked - injection detected",
+  },
+  finance: {
+    hasJD: false, showFit: false, samples: true,
+    section: "finance.section", upload: "finance.upload", hint: "hr.cv.hint", none: "finance.none",
+    screen: "finance.screen", results: "finance.results", need: "finance.need",
+    pass: "batch.safe", fail: "batch.blocked",
+    unit: "finance.unit", sPass: "batch.summary.safe", sBlock: "batch.summary.blocked",
+    csvSafe: "Safe", csvBlock: "Blocked - injection detected",
+  },
+};
 
 let me = null;
+let cfg = null;
 let jd = null;            // {title, text, filename} for HR
-let cvs = [];             // File[] for HR
-let hrResults = [];       // [{name, verdict, fit, category, excerpt}] in display order
+let items = [];           // things to screen: {kind:'file', file, name} | {kind:'sample', id, name}
+let samples = [];         // seeded sample docs (Legal/Finance): {id, label, filename, kind, ...}
+let results = [];         // [{name, verdict, fit, category, excerpt}] in display order
 
 // ── Setup ────────────────────────────────────────────────────────────────
 async function init() {
@@ -18,6 +49,7 @@ async function init() {
     if (res.status === 401) { window.location.href = "/login"; return; }
     me = await res.json();
   } catch (_) { window.location.href = "/login"; return; }
+  cfg = TEAM[me.team];
 
   $("identity").textContent = `${me.name} · ${t(`team.${me.team}.label`)}`;
   $("ws-title").textContent = t(`team.${me.team}.title`);
@@ -27,14 +59,11 @@ async function init() {
   $("help-btn").addEventListener("click", openHelp);
   $("help-close").addEventListener("click", () => hideModal("help-modal"));
   $("help-modal").addEventListener("click", (e) => { if (e.target === $("help-modal")) hideModal("help-modal"); });
-  $("modal-close").addEventListener("click", () => hideModal("doc-modal"));
-  $("doc-modal").addEventListener("click", (e) => { if (e.target === $("doc-modal")) hideModal("doc-modal"); });
   $("onboard-dismiss").addEventListener("click", dismissOnboard);
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeAnyModal(); });
 
   $("jd-input").addEventListener("change", onJdPicked);
-  $("cv-input").addEventListener("change", onCvsPicked);
-  $("upload-input").addEventListener("change", onUploadPicked);
+  $("docs-input").addEventListener("change", onDocsPicked);
 
   if (!localStorage.getItem("cortis_onboarded")) $("onboard").hidden = false;
   if (!sessionStorage.getItem("cortis_welcomed")) {
@@ -42,8 +71,8 @@ async function init() {
     toast(`${t("toast.welcome")} ${me.name}`);
   }
 
-  if (me.team === "hr") renderHR();
-  else loadList();
+  if (cfg.samples) await loadSamples();
+  renderWorkspace();
 }
 
 async function signOut() {
@@ -52,22 +81,30 @@ async function signOut() {
 }
 function dismissOnboard() { localStorage.setItem("cortis_onboarded", "1"); $("onboard").hidden = true; }
 
-// ══════════════════════════ HR: upload JD + CVs, batch screen ═══════════════
-function renderHR() {
-  const docs = $("docs");
-  docs.innerHTML = `<div id="hr-controls"></div><div id="hr-results"></div>`;
-  renderHRControls();
+async function loadSamples() {
+  try {
+    const data = await (await fetch("/api/workspace")).json();
+    samples = data.docs || [];
+  } catch (_) { samples = []; }
 }
 
-function renderHRControls() {
-  const box = $("hr-controls");
-  box.innerHTML = "";
+// ══════════════════════════ Batch controls (all teams) ══════════════════════
+function renderWorkspace() {
+  $("docs").innerHTML = `<div id="ws-controls"></div><div id="ws-results"></div>`;
+  renderControls();
+}
 
-  // JD section
+function section(titleText) {
+  const sec = document.createElement("section"); sec.className = "hr-section";
+  const h = document.createElement("h2"); h.className = "hr-section-title"; h.textContent = titleText;
+  sec.appendChild(h);
+  return sec;
+}
+
+function buildJdSection() {
   const jdSec = section(t("hr.jd.section"));
   if (jd) {
-    const card = document.createElement("div");
-    card.className = "jd-box";
+    const card = document.createElement("div"); card.className = "jd-box";
     const title = document.createElement("div"); title.className = "jd-title"; title.textContent = jd.title;
     const meta = document.createElement("div"); meta.className = "jd-meta"; meta.textContent = jd.filename;
     const text = document.createElement("pre"); text.className = "jd-text"; text.textContent = jd.text;
@@ -79,46 +116,63 @@ function renderHRControls() {
     jdSec.appendChild(hint);
     jdSec.appendChild(mkBtn("primary-btn", "📄 " + t("hr.jd.upload"), () => $("jd-input").click()));
   }
-  box.appendChild(jdSec);
+  return jdSec;
+}
 
-  // CV section
-  const cvSec = section(t("hr.cv.section"));
+function renderControls() {
+  const box = $("ws-controls"); box.innerHTML = "";
+  if (cfg.hasJD) box.appendChild(buildJdSection());
+
+  const docSec = section(t(cfg.section));
   const row = document.createElement("div"); row.className = "upload-row";
-  row.appendChild(mkBtn("primary-btn", "📎 " + t("hr.cv.upload"), () => $("cv-input").click()));
-  const hint = document.createElement("span"); hint.className = "file-hint"; hint.textContent = t("hr.cv.hint");
+  row.appendChild(mkBtn("primary-btn", "📎 " + t(cfg.upload), () => $("docs-input").click()));
+  const hint = document.createElement("span"); hint.className = "file-hint"; hint.textContent = t(cfg.hint);
   row.appendChild(hint);
-  cvSec.appendChild(row);
+  docSec.appendChild(row);
 
-  if (cvs.length) {
+  // Sample documents to add to the batch (Legal / Finance)
+  if (cfg.samples && samples.length) {
+    const sw = document.createElement("div"); sw.className = "samples-add";
+    const lbl = document.createElement("span"); lbl.className = "samples-add-label"; lbl.textContent = t("samples.add");
+    sw.appendChild(lbl);
+    for (const s of samples) {
+      const added = items.some((it) => it.kind === "sample" && it.id === s.id);
+      const b = mkBtn("chip-add", (KIND_ICON[s.kind] || "📄") + " " + s.label, () => addSample(s));
+      b.disabled = added;
+      sw.appendChild(b);
+    }
+    docSec.appendChild(sw);
+  }
+
+  if (items.length) {
     const list = document.createElement("ul"); list.className = "cv-list";
-    cvs.forEach((f, i) => {
+    items.forEach((it, i) => {
       const li = document.createElement("li"); li.className = "cv-chip";
-      const nm = document.createElement("span"); nm.textContent = f.name;
+      const nm = document.createElement("span");
+      nm.textContent = it.name + (it.kind === "sample" ? " · " + t("samples.tag") : "");
       const x = document.createElement("button"); x.className = "chip-x"; x.type = "button";
       x.setAttribute("aria-label", "Remove"); x.textContent = "✕";
-      x.addEventListener("click", () => { cvs.splice(i, 1); renderHRControls(); });
+      x.addEventListener("click", () => { items.splice(i, 1); renderControls(); });
       li.appendChild(nm); li.appendChild(x); list.appendChild(li);
     });
-    cvSec.appendChild(list);
+    docSec.appendChild(list);
   } else {
-    const none = document.createElement("p"); none.className = "muted-line"; none.textContent = t("hr.cv.none");
-    cvSec.appendChild(none);
+    const none = document.createElement("p"); none.className = "muted-line"; none.textContent = t(cfg.none);
+    docSec.appendChild(none);
   }
-  box.appendChild(cvSec);
+  box.appendChild(docSec);
 
-  // Screen button
   const actions = document.createElement("div"); actions.className = "hr-actions";
-  const screen = mkBtn("primary-btn", t("hr.screen"), screenAll);
-  screen.disabled = !(jd && cvs.length);
+  const screen = mkBtn("primary-btn", t(cfg.screen), screenAll);
+  screen.disabled = !canScreen();
   actions.appendChild(screen);
   box.appendChild(actions);
 }
 
-function section(titleText) {
-  const sec = document.createElement("section"); sec.className = "hr-section";
-  const h = document.createElement("h2"); h.className = "hr-section-title"; h.textContent = titleText;
-  sec.appendChild(h);
-  return sec;
+function canScreen() {
+  if (!items.length) return false;
+  if (cfg.hasJD && !jd) return false;
+  return true;
 }
 
 async function onJdPicked(e) {
@@ -131,26 +185,34 @@ async function onJdPicked(e) {
     const d = await res.json();
     if (!res.ok) { toast(d.error || t("err.generic"), "error"); return; }
     jd = { title: d.title, text: d.text, filename: d.filename };
-    renderHRControls();
+    renderControls();
   } catch (_) { toast(t("err.network"), "error"); }
 }
 
-function onCvsPicked(e) {
+function onDocsPicked(e) {
   const picked = [...e.target.files]; e.target.value = "";
   for (const f of picked) {
-    if (cvs.length >= MAX_CVS) { toast(t("hr.cv.max"), "error"); break; }
-    cvs.push(f);
+    if (items.length >= MAX_ITEMS) { toast(t("hr.cv.max"), "error"); break; }
+    if (f.size > 5 * 1024 * 1024) { toast(t("err.tooLarge"), "error"); continue; }
+    items.push({ kind: "file", file: f, name: f.name });
   }
-  renderHRControls();
+  renderControls();
 }
 
+function addSample(s) {
+  if (items.length >= MAX_ITEMS) { toast(t("hr.cv.max"), "error"); return; }
+  if (items.some((it) => it.kind === "sample" && it.id === s.id)) return;
+  items.push({ kind: "sample", id: s.id, name: s.label });
+  renderControls();
+}
+
+// ══════════════════════════ Screen the batch → results table ════════════════
 async function screenAll() {
-  if (!jd || !cvs.length) { toast(t("hr.needBoth"), "error"); return; }
-  hrResults = [];
-  const out = $("hr-results");
-  out.innerHTML = "";
+  if (!canScreen()) { toast(t(cfg.need), "error"); return; }
+  results = [];
+  const out = $("ws-results"); out.innerHTML = "";
   const head = document.createElement("div"); head.className = "results-head";
-  const h = document.createElement("h2"); h.className = "hr-section-title"; h.textContent = t("hr.results");
+  const h = document.createElement("h2"); h.className = "hr-section-title"; h.textContent = t(cfg.results);
   const actions = document.createElement("div"); actions.className = "results-actions";
   const summary = document.createElement("span"); summary.className = "results-summary"; summary.id = "results-summary";
   const exportBtn = mkBtn("secondary-btn", "⤓ " + t("hr.export"), exportCsv);
@@ -163,28 +225,40 @@ async function screenAll() {
   out.scrollIntoView({ behavior: "smooth", block: "start" });
 
   let done = 0;
-  const rows = cvs.map((cv) => ({ cv, el: null, result: null }));
+  const rows = items.map((it) => ({ item: it, el: null, result: null }));
   const jobs = rows.map((row) => {
     const rowEl = document.createElement("details"); rowEl.className = "cv-result screening";
     rowEl.innerHTML = `<summary class="cv-result-head"><span class="crh-icon">⏳</span>` +
       `<span class="crh-name"></span><span class="crh-status">${t("hr.screeningOne")}</span></summary>` +
       `<div class="cv-result-body"></div>`;
-    rowEl.querySelector(".crh-name").textContent = row.cv.name;
+    rowEl.querySelector(".crh-name").textContent = row.item.name;
     list.appendChild(rowEl);
     row.el = rowEl;
-    return screenOne(row.cv)
-      .then((d) => { fillRow(rowEl, d); row.result = toResult(row.cv, d); })
-      .catch(() => { fillRow(rowEl, null); row.result = toResult(row.cv, null); })
-      .finally(() => { done++; $("results-summary").textContent = `${done}/${rows.length} ${t("hr.summary.screened")}…`; });
+    return screenOne(row.item)
+      .then((d) => { fillRow(rowEl, d); row.result = toResult(row.item, d); })
+      .catch(() => { fillRow(rowEl, null); row.result = toResult(row.item, null); })
+      .finally(() => { done++; $("results-summary").textContent = `${done}/${rows.length} ${t(cfg.unit)}…`; });
   });
   await Promise.all(jobs);
   finalizeResults(list, rows);
 }
 
-function toResult(cv, d) {
-  if (!d) return { name: cv.name, verdict: "error", fit: "", category: "", excerpt: "" };
+async function screenOne(item) {
+  const fd = new FormData();
+  if (item.kind === "file") fd.append("file", item.file);
+  else fd.append("item", item.id);
+  if (cfg.hasJD && jd) fd.append("jd", jd.text);
+  fd.append("lang", currentLang());
+  const res = await fetch("/api/check", { method: "POST", body: fd });
+  const d = await res.json();
+  if (!res.ok) throw new Error(d.error || "err");
+  return d;
+}
+
+function toResult(item, d) {
+  if (!d) return { name: item.name, verdict: "error", fit: "", category: "", excerpt: "" };
   return {
-    name: cv.name,
+    name: item.name,
     verdict: d.verdict,
     fit: d.verdict === "safe" ? (d.fit_level || "") : "",
     category: d.verdict !== "safe" ? (d.category || "") : "",
@@ -192,59 +266,26 @@ function toResult(cv, d) {
   };
 }
 
-// After every CV is screened: show the tally, and rank the rows so the ones that
-// need attention (cheating/errors) sit on top, then the strongest fits first.
+// After every document is screened: show the tally, and rank the rows so the ones
+// that need attention (blocked/errors) sit on top, then (HR) the strongest fits.
 function finalizeResults(list, rows) {
   const done = rows.filter((r) => r.result);
-  const passed = done.filter((r) => r.result.verdict === "safe").length;
-  const blocked = done.length - passed;
+  const safe = done.filter((r) => r.result.verdict === "safe").length;
+  const blocked = done.length - safe;
   $("results-summary").textContent =
-    `${done.length} ${t("hr.summary.screened")} · ${passed} ${t("hr.summary.passed")} · ${blocked} ${t("hr.summary.blocked")}`;
+    `${done.length} ${t(cfg.unit)} · ${safe} ${t(cfg.sPass)} · ${blocked} ${t(cfg.sBlock)}`;
 
   const fitRank = { strong: 0, partial: 1, weak: 2 };
   const rank = (r) => {
-    if (r.result.verdict !== "safe") return -1;                      // flagged first
+    if (r.result.verdict !== "safe") return -1;                 // flagged first
+    if (!cfg.showFit) return 10;
     const f = r.result.fit.toLowerCase();
-    return 10 + (f in fitRank ? fitRank[f] : 3);                     // then Strong→Partial→Weak→unassessed
+    return 10 + (f in fitRank ? fitRank[f] : 3);                 // then Strong→Partial→Weak→unassessed
   };
   const sorted = done.sort((a, b) => rank(a) - rank(b) || a.result.name.localeCompare(b.result.name));
-  for (const r of sorted) list.appendChild(r.el);                    // re-append in ranked order
-  hrResults = sorted.map((r) => r.result);
-  const btn = $("export-btn"); if (btn) btn.disabled = hrResults.length === 0;
-}
-
-// Download the ranked shortlist as CSV (canonical English so it drops cleanly into
-// a spreadsheet / ATS; BOM so Excel reads UTF-8 names correctly).
-function exportCsv() {
-  if (!hrResults.length) return;
-  const esc = (s) => `"${String(s == null ? "" : s).replace(/"/g, '""')}"`;
-  const cap = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : "");
-  const header = ["Candidate", "Result", "Fit", "Issue", "Flagged passage", "Job description"];
-  const lines = [header.join(",")];
-  for (const r of hrResults) {
-    const result = r.verdict === "safe" ? "Passed"
-      : (r.verdict === "error" ? "Error" : "Not passed - cheating detected");
-    const fit = r.verdict === "safe" ? (r.fit ? cap(r.fit) : "Not assessed") : "";
-    lines.push([r.name, result, fit, r.category, r.excerpt, jd ? jd.title : ""].map(esc).join(","));
-  }
-  const blob = new Blob(["﻿" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url; a.download = `cortis-screening-${new Date().toISOString().slice(0, 10)}.csv`;
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-  toast(t("hr.export") + " ✓");
-}
-
-async function screenOne(cv) {
-  const fd = new FormData();
-  fd.append("file", cv);
-  fd.append("jd", jd.text);
-  fd.append("lang", currentLang());
-  const res = await fetch("/api/check", { method: "POST", body: fd });
-  const d = await res.json();
-  if (!res.ok) throw new Error(d.error || "err");
-  return d;
+  for (const r of sorted) list.appendChild(r.el);               // re-append in ranked order
+  results = sorted.map((r) => r.result);
+  const btn = $("export-btn"); if (btn) btn.disabled = results.length === 0;
 }
 
 function fillRow(rowEl, d) {
@@ -258,23 +299,23 @@ function fillRow(rowEl, d) {
     rowEl.classList.add("row-blocked"); icon.textContent = "⚠️";
     status.textContent = t("err.generic"); return;
   }
+  const cat = d.category && d.category !== "none" ? d.category : "generic";
   if (d.verdict === "safe") {
     rowEl.classList.add("row-safe"); icon.textContent = "✅";
-    const lvl = (d.fit_level || "").toLowerCase();
-    const fitText = lvl ? t(`fit.${lvl}`) : t("fit.unknown");
-    status.innerHTML = `<span class="pill pill-safe">${t("hr.pass")}</span>` +
-      `<span class="fit-badge fit-${lvl || "unknown"}"></span>`;
-    status.querySelector(".fit-badge").textContent = fitText;
-    const a = d.assistant || {};
-    const p = document.createElement("div");
-    p.className = "assistant-body" + (a.status === "ok" ? "" : " muted");
-    p.textContent = a.text || "";
-    body.appendChild(p);
+    status.innerHTML = `<span class="pill pill-safe">${t(cfg.pass)}</span>`;
+    if (cfg.showFit) {
+      const lvl = (d.fit_level || "").toLowerCase();
+      const badge = document.createElement("span");
+      badge.className = "fit-badge fit-" + (lvl || "unknown");
+      badge.textContent = lvl ? t(`fit.${lvl}`) : t("fit.unknown");
+      status.appendChild(badge);
+    }
+    if (d.assistant) body.appendChild(buildAssistant(d.assistant));
   } else {
     rowEl.classList.add("row-blocked"); icon.textContent = "⛔";
-    status.innerHTML = `<span class="pill pill-block">${t("hr.fail")}</span>`;
-    const cat = d.category && d.category !== "none" ? d.category : "generic";
-    const expl = document.createElement("div"); expl.className = "verdict-body"; expl.textContent = t(`finding.${cat}.explanation`);
+    status.innerHTML = `<span class="pill pill-block">${t(cfg.fail)}</span>`;
+    const expl = document.createElement("div"); expl.className = "verdict-body";
+    expl.textContent = t(`finding.${cat}.explanation`);
     body.appendChild(expl);
     if (d.matched_excerpt) {
       const flag = document.createElement("div"); flag.className = "flagged";
@@ -283,130 +324,12 @@ function fillRow(rowEl, d) {
       flag.appendChild(ft); flag.appendChild(fx); body.appendChild(flag);
     }
   }
+  body.appendChild(buildTech(d, cat));
   const name = rowEl.querySelector(".crh-name").textContent;
   body.appendChild(reportControl({
     source: name, verdict: d.verdict, category: d.category,
     confidence: d.confidence, excerpt: d.matched_excerpt,
   }));
-}
-
-// ══════════════════════════ Legal / Finance: samples + upload ═══════════════
-async function loadList() {
-  const docs = $("docs");
-  const upload = document.createElement("div"); upload.className = "upload-row upload-primary";
-  upload.appendChild(mkBtn("primary-btn", "📎 " + t(`upload.${me.team}`), () => $("upload-input").click()));
-  docs.innerHTML = "";
-  docs.appendChild(upload);
-
-  let data;
-  try { data = await (await fetch("/api/workspace")).json(); }
-  catch (_) { const p = document.createElement("p"); p.className = "loading-line"; p.textContent = t("ws.loadFail"); docs.appendChild(p); return; }
-
-  if (data.docs && data.docs.length) {
-    const h = document.createElement("h2"); h.className = "hr-section-title samples-title"; h.textContent = t("samples.title");
-    docs.appendChild(h);
-    const grid = document.createElement("div"); grid.className = "doc-grid";
-    for (const d of data.docs) grid.appendChild(renderCard(d));
-    docs.appendChild(grid);
-  }
-}
-
-function renderCard(d) {
-  const card = document.createElement("button");
-  card.className = "doc-card"; card.type = "button";
-  card.innerHTML = `<span class="dc-icon" aria-hidden="true"></span><span class="dc-body"><span class="dc-label"></span><span class="dc-sub"></span></span>`;
-  card.querySelector(".dc-icon").textContent = KIND_ICON[d.kind] || "📄";
-  card.querySelector(".dc-label").textContent = d.label;
-  card.querySelector(".dc-sub").textContent = `${d.sub ? d.sub + " · " : ""}${d.filename} · ${d.size_kb} KB`;
-  card.addEventListener("click", () => openDoc(d));
-  return card;
-}
-
-function onUploadPicked(e) {
-  const f = e.target.files[0]; e.target.value = "";
-  if (!f) return;
-  if (f.size > 5 * 1024 * 1024) { toast(t("err.tooLarge"), "error"); return; }
-  $("modal-title").textContent = f.name;
-  showModal("doc-modal");
-  doCheck({ file: f });
-}
-
-// Seeded sample: show context, then check
-function openDoc(d) {
-  $("modal-title").textContent = d.label;
-  const body = $("modal-body"); body.innerHTML = "";
-  const ctx = document.createElement("div"); ctx.className = "ctx";
-  const line = (k, v) => {
-    const r = document.createElement("div"); r.className = "ctx-line";
-    const kk = document.createElement("span"); kk.className = "ctx-k"; kk.textContent = k;
-    const vv = document.createElement("span"); vv.textContent = v;
-    r.appendChild(kk); r.appendChild(vv); return r;
-  };
-  ctx.appendChild(line(me.team === "legal" ? t("modal.agreement") : t("modal.invoice"), d.label + (d.sub ? " · " + d.sub : "")));
-  ctx.appendChild(line(t("modal.file"), `${d.filename} · ${d.kind} · ${d.size_kb} KB`));
-  body.appendChild(ctx);
-  const note = document.createElement("p"); note.className = "ctx-note"; note.textContent = t(`note.${me.team}`);
-  body.appendChild(note);
-  const foot = document.createElement("div"); foot.className = "modal-foot";
-  foot.appendChild(mkBtn("secondary-btn", t("btn.cancel"), () => hideModal("doc-modal")));
-  foot.appendChild(mkBtn("primary-btn", t(`team.${me.team}.action`), (e) => doCheck({ item: d.id }, e.target)));
-  body.appendChild(foot);
-  showModal("doc-modal");
-}
-
-async function doCheck(payload, triggerBtn) {
-  const body = $("modal-body");
-  if (triggerBtn) triggerBtn.disabled = true;
-  body.innerHTML = `<div class="status"><div class="spinner"></div><span>${t("check.status")}</span></div>`;
-  const fd = new FormData();
-  if (payload.item) fd.append("item", payload.item);
-  if (payload.file) fd.append("file", payload.file);
-  fd.append("lang", currentLang());
-  let d;
-  try {
-    const res = await fetch("/api/check", { method: "POST", body: fd });
-    d = await res.json();
-    if (!res.ok) { renderModalError(d.error || t("err.generic")); return; }
-  } catch (_) { renderModalError(t("err.network")); return; }
-  renderResult(d);
-}
-
-function renderResult(data) {
-  const safe = data.verdict === "safe";
-  const cat = data.category && data.category !== "none" ? data.category : "generic";
-  const body = $("modal-body"); body.innerHTML = "";
-  const v = document.createElement("div"); v.className = "verdict " + (safe ? "safe" : "blocked");
-  const head = document.createElement("div"); head.className = "verdict-head";
-  head.innerHTML = `<div class="verdict-icon">${safe ? "✓" : "✕"}</div><h2 class="verdict-title"></h2>`;
-  head.querySelector(".verdict-title").textContent = t(`verdict.${data.verdict}.headline`);
-  v.appendChild(head);
-  const expl = document.createElement("div"); expl.className = "verdict-body";
-  expl.textContent = safe ? t("verdict.safe.explanation") : t(`finding.${cat}.explanation`);
-  v.appendChild(expl);
-  const src = document.createElement("div"); src.className = "source-line";
-  src.textContent = `${t("source.checked")} ${data.source}`; v.appendChild(src);
-  if (!safe && data.matched_excerpt) {
-    const flag = document.createElement("div"); flag.className = "flagged";
-    const ft = document.createElement("div"); ft.className = "flagged-title"; ft.textContent = t("flagged.title");
-    const fx = document.createElement("blockquote"); fx.className = "flagged-text"; fx.textContent = data.matched_excerpt;
-    flag.appendChild(ft); flag.appendChild(fx); v.appendChild(flag);
-  }
-  if (!safe) {
-    const ns = document.createElement("div"); ns.className = "next-step";
-    const s = document.createElement("strong"); s.textContent = t("nextstep.title");
-    ns.appendChild(s); ns.appendChild(document.createTextNode(t("nextstep.blocked"))); v.appendChild(ns);
-  }
-  v.appendChild(buildTech(data, cat));
-  body.appendChild(v);
-  if (safe && data.assistant) body.appendChild(buildAssistant(data.assistant));
-  body.appendChild(reportControl({
-    source: data.source, verdict: data.verdict, category: data.category,
-    confidence: data.confidence, excerpt: data.matched_excerpt,
-  }));
-  const foot = document.createElement("div"); foot.className = "modal-foot";
-  foot.appendChild(mkBtn("primary-btn", t("btn.done"), () => hideModal("doc-modal")));
-  body.appendChild(foot);
-  refocusModal("doc-modal");
 }
 
 function buildAssistant(a) {
@@ -435,19 +358,34 @@ function buildTech(data, cat) {
     const dd = document.createElement("dd"); dd.textContent = val;
     grid.appendChild(dt); grid.appendChild(dd);
   }
-  if (data.matched_excerpt) {
-    const ex = document.createElement("div"); ex.className = "tech-excerpt";
-    ex.textContent = t("tech.passage") + "\n" + data.matched_excerpt; grid.appendChild(ex);
-  }
   details.appendChild(grid); return details;
 }
 
-function renderModalError(msg) {
-  const body = $("modal-body"); body.innerHTML = "";
-  const div = document.createElement("div"); div.className = "inline-error"; div.textContent = msg; body.appendChild(div);
-  const foot = document.createElement("div"); foot.className = "modal-foot";
-  foot.appendChild(mkBtn("secondary-btn", t("btn.close"), () => hideModal("doc-modal")));
-  body.appendChild(foot); refocusModal("doc-modal");
+// Download the ranked results as CSV (canonical English; BOM so Excel reads UTF-8).
+function exportCsv() {
+  if (!results.length) return;
+  const esc = (s) => `"${String(s == null ? "" : s).replace(/"/g, '""')}"`;
+  const cap = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : "");
+  const header = ["Document", "Result"]
+    .concat(cfg.showFit ? ["Fit"] : [])
+    .concat(["Issue", "Flagged passage"])
+    .concat(cfg.hasJD ? ["Job description"] : []);
+  const lines = [header.join(",")];
+  for (const r of results) {
+    const result = r.verdict === "safe" ? cfg.csvSafe : (r.verdict === "error" ? "Error" : cfg.csvBlock);
+    const cols = [r.name, result];
+    if (cfg.showFit) cols.push(r.verdict === "safe" ? (r.fit ? cap(r.fit) : "Not assessed") : "");
+    cols.push(r.category, r.excerpt);
+    if (cfg.hasJD) cols.push(jd ? jd.title : "");
+    lines.push(cols.map(esc).join(","));
+  }
+  const blob = new Blob(["﻿" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = `cortis-${me.team}-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  toast(t("hr.export") + " ✓");
 }
 
 function openHelp() {
@@ -514,7 +452,7 @@ function toast(msg, type) {
   setTimeout(() => { el.classList.remove("show"); setTimeout(() => el.remove(), 300); }, 3800);
 }
 
-// ── Modal helpers (focus trap) ───────────────────────────────────────────────
+// ── Modal helpers (help modal; focus trap) ───────────────────────────────────
 let lastFocused = null;
 function focusables(modal) {
   return [...modal.querySelectorAll('button, [href], input, textarea, select, [tabindex]:not([tabindex="-1"])')]
@@ -533,13 +471,12 @@ function showModal(id) {
   const modal = overlay.querySelector(".modal"); modal.addEventListener("keydown", trapKeydown);
   const f = focusables(modal); if (f.length) f[0].focus();
 }
-function refocusModal(id) { const f = focusables($(id).querySelector(".modal")); if (f.length) f[0].focus(); }
 function hideModal(id) {
   const overlay = $(id); overlay.hidden = true;
   overlay.querySelector(".modal").removeEventListener("keydown", trapKeydown);
   if (lastFocused && lastFocused.focus) lastFocused.focus();
 }
-function closeAnyModal() { for (const id of ["doc-modal", "help-modal"]) if (!$(id).hidden) hideModal(id); }
+function closeAnyModal() { if (!$("help-modal").hidden) hideModal("help-modal"); }
 
 function mkBtn(cls, label, onClick) {
   const b = document.createElement("button"); b.className = cls; b.type = "button"; b.textContent = label;

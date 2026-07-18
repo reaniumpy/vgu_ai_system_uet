@@ -529,3 +529,22 @@ body {
 .report-badge-false_positive { color: #9a6a00; background: #fff5e0; border-color: #f0d79a; }
 .report-badge-threat { color: var(--block); background: var(--block-bg); border-color: var(--block-line); }
 .report-badge-missed_threat { color: #6d3bbf; background: #efe8fb; border-color: #d8c7f2; }
+
+/* ── Sample quick-add chips (Legal / Finance batch) ──────── */
+.samples-add { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 12px 0 2px; }
+.samples-add-label { font-size: 13px; color: var(--ink-soft); }
+.chip-add {
+  font: inherit; font-size: 13px; padding: 6px 12px; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--card); color: var(--ink); cursor: pointer;
+}
+.chip-add:hover:not(:disabled) { background: var(--bg); border-color: var(--brand); }
+.chip-add:disabled { opacity: .5; cursor: default; }
+.chip-add:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+
+/* ── Sign-in: current (already signed-in) account ────────── */
+.account-card:disabled:hover { border-color: var(--line); background: var(--card); }
+.ac-current {
+  font-size: 12px; font-weight: 700; color: var(--safe);
+  background: var(--safe-bg); border: 1px solid var(--safe-line);
+  padding: 3px 10px; border-radius: 999px; white-space: nowrap;
+}
