@@ -8,6 +8,7 @@ const MAX_CVS = 10;
 let me = null;
 let jd = null;            // {title, text, filename} for HR
 let cvs = [];             // File[] for HR
+let hrResults = [];       // [{name, verdict, fit, category, excerpt}] in display order
 
 // ── Setup ────────────────────────────────────────────────────────────────
 async function init() {
@@ -145,34 +146,94 @@ function onCvsPicked(e) {
 
 async function screenAll() {
   if (!jd || !cvs.length) { toast(t("hr.needBoth"), "error"); return; }
+  hrResults = [];
   const out = $("hr-results");
   out.innerHTML = "";
   const head = document.createElement("div"); head.className = "results-head";
   const h = document.createElement("h2"); h.className = "hr-section-title"; h.textContent = t("hr.results");
+  const actions = document.createElement("div"); actions.className = "results-actions";
   const summary = document.createElement("span"); summary.className = "results-summary"; summary.id = "results-summary";
-  head.appendChild(h); head.appendChild(summary);
+  const exportBtn = mkBtn("secondary-btn", "⤓ " + t("hr.export"), exportCsv);
+  exportBtn.id = "export-btn"; exportBtn.disabled = true;
+  actions.appendChild(summary); actions.appendChild(exportBtn);
+  head.appendChild(h); head.appendChild(actions);
   out.appendChild(head);
 
   const list = document.createElement("div"); list.className = "cv-results"; out.appendChild(list);
   out.scrollIntoView({ behavior: "smooth", block: "start" });
 
-  let passed = 0, blocked = 0;
-  const jobs = cvs.map((cv) => {
+  let done = 0;
+  const rows = cvs.map((cv) => ({ cv, el: null, result: null }));
+  const jobs = rows.map((row) => {
     const rowEl = document.createElement("details"); rowEl.className = "cv-result screening";
     rowEl.innerHTML = `<summary class="cv-result-head"><span class="crh-icon">⏳</span>` +
       `<span class="crh-name"></span><span class="crh-status">${t("hr.screeningOne")}</span></summary>` +
       `<div class="cv-result-body"></div>`;
-    rowEl.querySelector(".crh-name").textContent = cv.name;
+    rowEl.querySelector(".crh-name").textContent = row.cv.name;
     list.appendChild(rowEl);
-    return screenOne(cv).then((d) => {
-      if (d && d.verdict === "safe") passed++; else blocked++;
-      fillRow(rowEl, d);
-    }).catch(() => { blocked++; fillRow(rowEl, null); }).finally(() => {
-      $("results-summary").textContent =
-        `${passed} ${t("hr.summary.passed")} · ${blocked} ${t("hr.summary.blocked")}`;
-    });
+    row.el = rowEl;
+    return screenOne(row.cv)
+      .then((d) => { fillRow(rowEl, d); row.result = toResult(row.cv, d); })
+      .catch(() => { fillRow(rowEl, null); row.result = toResult(row.cv, null); })
+      .finally(() => { done++; $("results-summary").textContent = `${done}/${rows.length} ${t("hr.summary.screened")}…`; });
   });
   await Promise.all(jobs);
+  finalizeResults(list, rows);
+}
+
+function toResult(cv, d) {
+  if (!d) return { name: cv.name, verdict: "error", fit: "", category: "", excerpt: "" };
+  return {
+    name: cv.name,
+    verdict: d.verdict,
+    fit: d.verdict === "safe" ? (d.fit_level || "") : "",
+    category: d.verdict !== "safe" ? (d.category || "") : "",
+    excerpt: d.matched_excerpt || "",
+  };
+}
+
+// After every CV is screened: show the tally, and rank the rows so the ones that
+// need attention (cheating/errors) sit on top, then the strongest fits first.
+function finalizeResults(list, rows) {
+  const done = rows.filter((r) => r.result);
+  const passed = done.filter((r) => r.result.verdict === "safe").length;
+  const blocked = done.length - passed;
+  $("results-summary").textContent =
+    `${done.length} ${t("hr.summary.screened")} · ${passed} ${t("hr.summary.passed")} · ${blocked} ${t("hr.summary.blocked")}`;
+
+  const fitRank = { strong: 0, partial: 1, weak: 2 };
+  const rank = (r) => {
+    if (r.result.verdict !== "safe") return -1;                      // flagged first
+    const f = r.result.fit.toLowerCase();
+    return 10 + (f in fitRank ? fitRank[f] : 3);                     // then Strong→Partial→Weak→unassessed
+  };
+  const sorted = done.sort((a, b) => rank(a) - rank(b) || a.result.name.localeCompare(b.result.name));
+  for (const r of sorted) list.appendChild(r.el);                    // re-append in ranked order
+  hrResults = sorted.map((r) => r.result);
+  const btn = $("export-btn"); if (btn) btn.disabled = hrResults.length === 0;
+}
+
+// Download the ranked shortlist as CSV (canonical English so it drops cleanly into
+// a spreadsheet / ATS; BOM so Excel reads UTF-8 names correctly).
+function exportCsv() {
+  if (!hrResults.length) return;
+  const esc = (s) => `"${String(s == null ? "" : s).replace(/"/g, '""')}"`;
+  const cap = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : "");
+  const header = ["Candidate", "Result", "Fit", "Issue", "Flagged passage", "Job description"];
+  const lines = [header.join(",")];
+  for (const r of hrResults) {
+    const result = r.verdict === "safe" ? "Passed"
+      : (r.verdict === "error" ? "Error" : "Not passed - cheating detected");
+    const fit = r.verdict === "safe" ? (r.fit ? cap(r.fit) : "Not assessed") : "";
+    lines.push([r.name, result, fit, r.category, r.excerpt, jd ? jd.title : ""].map(esc).join(","));
+  }
+  const blob = new Blob(["﻿" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = `cortis-screening-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  toast(t("hr.export") + " ✓");
 }
 
 async function screenOne(cv) {
