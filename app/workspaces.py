@@ -53,25 +53,48 @@ def team_request(team: str) -> str:
     )
 
 
-# ── Seeded sample documents for Legal / Finance (quick examples to try) ───────
-_AGREEMENTS = [
-    {"id": "a_meridian", "label": "Meridian Consulting Ltd", "sub": "Services Agreement",
-     "file": "legal/Meridian_Services_Agreement.txt"},
-    {"id": "a_atlas", "label": "Atlas Logistics Inc", "sub": "Statement of Work",
-     "file": "legal/Atlas_Logistics_SOW.txt"},
+# ── File catalog: the documents the in-app file browser offers ────────────────
+# kind: jd (HR fit context) | cv (HR) | contract (Legal) | invoice (Finance).
+# Some carry a prompt-injection payload (hidden white text, or a disguised note) —
+# deliberately NOT flagged here; the guard is what has to catch them. Regenerate
+# the PDFs with `python scripts/build_catalog_pdfs.py`.
+CATALOG = [
+    # HR — job descriptions (used as fit context, not screened)
+    {"id": "jd_swe", "team": "hr", "kind": "jd", "label": "Senior Software Engineer",
+     "sub": "Job description", "file": "hr/JD_Senior_Software_Engineer.pdf"},
+    {"id": "jd_data", "team": "hr", "kind": "jd", "label": "Data Analyst",
+     "sub": "Job description", "file": "hr/JD_Data_Analyst.pdf"},
+    # HR — candidate CVs
+    {"id": "cv_priya", "team": "hr", "kind": "cv", "label": "Priya Nair",
+     "sub": "Backend Engineer", "file": "hr/CV_Priya_Nair.pdf"},
+    {"id": "cv_marcus", "team": "hr", "kind": "cv", "label": "Marcus Reed",
+     "sub": "Data Analyst", "file": "hr/CV_Marcus_Reed.pdf"},
+    {"id": "cv_linh", "team": "hr", "kind": "cv", "label": "Linh Tran",
+     "sub": "Frontend Developer", "file": "hr/CV_Linh_Tran.pdf"},
+    {"id": "cv_ethan", "team": "hr", "kind": "cv", "label": "Ethan Le",
+     "sub": "Software Engineer", "file": "hr/CV_Ethan_Le.pdf"},
+    {"id": "cv_hannah", "team": "hr", "kind": "cv", "label": "Hannah Cole",
+     "sub": "Recruiting Operations", "file": "hr/CV_Hannah_Cole.pdf"},
+    # Legal — contracts
+    {"id": "ct_atlas", "team": "legal", "kind": "contract", "label": "Atlas Logistics Inc",
+     "sub": "Statement of Work", "file": "legal/Contract_Atlas_Logistics_SOW.pdf"},
+    {"id": "ct_brightpath", "team": "legal", "kind": "contract", "label": "Brightpath / Cendra Labs",
+     "sub": "Mutual NDA", "file": "legal/Contract_Brightpath_NDA.pdf"},
+    {"id": "ct_meridian", "team": "legal", "kind": "contract", "label": "Meridian Consulting Ltd",
+     "sub": "Services Agreement", "file": "legal/Contract_Meridian_Services.pdf"},
+    {"id": "ct_vertex", "team": "legal", "kind": "contract", "label": "Vertex Supply Co",
+     "sub": "Vendor Agreement", "file": "legal/Contract_Vertex_Vendor.pdf"},
+    # Finance — invoices
+    {"id": "inv_orion", "team": "finance", "kind": "invoice", "label": "Orion Office Supplies",
+     "sub": "Invoice 9982 - $4,601", "file": "finance/Invoice_Orion_9982.pdf"},
+    {"id": "inv_northwind", "team": "finance", "kind": "invoice", "label": "Northwind Print & Design",
+     "sub": "Invoice INV-2043 - $1,534", "file": "finance/Invoice_Northwind_2043.pdf"},
+    {"id": "inv_zephyr", "team": "finance", "kind": "invoice", "label": "Zephyr Logistics",
+     "sub": "Invoice 5510 - $3,420", "file": "finance/Invoice_Zephyr_5510.pdf"},
+    {"id": "inv_apex", "team": "finance", "kind": "invoice", "label": "Apex Cloud Services",
+     "sub": "Invoice 7731 - $5,500", "file": "finance/Invoice_Apex_Cloud_7731.pdf"},
 ]
-_INVOICES = [
-    {"id": "i_orion", "label": "Orion Office Supplies", "sub": "Invoice 9982 · $4,601",
-     "file": "finance/Orion_Invoice_9982.txt"},
-    {"id": "i_northwind", "label": "Northwind Print & Design", "sub": "Invoice INV-2043 · $1,534",
-     "file": "finance/Northwind_Invoice_INV-2043.txt"},
-]
-
-_DOCS = {}
-for _a in _AGREEMENTS:
-    _DOCS[_a["id"]] = {**_a, "team": "legal"}
-for _i in _INVOICES:
-    _DOCS[_i["id"]] = {**_i, "team": "finance"}
+_BY_ID = {d["id"]: d for d in CATALOG}
 
 
 def account(account_id: str):
@@ -102,26 +125,29 @@ def _file_meta(file_rel: str) -> dict:
     return {"filename": filename, "kind": _kind(filename), "size_kb": size_kb}
 
 
-def workspace_data(team: str) -> dict:
-    """Team-scoped sample documents (Legal/Finance). HR is upload-driven."""
-    if team == "legal":
-        return {"docs": [{"id": a["id"], "label": a["label"], "sub": a["sub"], **_file_meta(a["file"])}
-                         for a in _AGREEMENTS]}
-    if team == "finance":
-        return {"docs": [{"id": i["id"], "label": i["label"], "sub": i["sub"], **_file_meta(i["file"])}
-                        for i in _INVOICES]}
-    return {"docs": []}
+def _entry(d: dict) -> dict:
+    meta = _file_meta(d["file"])  # keep the catalog kind (jd/cv/...), not the file type
+    return {"id": d["id"], "kind": d["kind"], "label": d["label"], "sub": d["sub"],
+            "filename": meta["filename"], "size_kb": meta["size_kb"]}
+
+
+def catalog_for(team: str) -> dict:
+    """Files the browser offers this team, grouped by kind (jd/cv/contract/invoice)."""
+    grouped: dict = {}
+    for d in CATALOG:
+        if d["team"] == team:
+            grouped.setdefault(d["kind"], []).append(_entry(d))
+    return grouped
 
 
 def resolve_document(item_id: str, team: str):
     """Return (doc, absolute_path) if item_id exists and belongs to team, else (None, None)."""
-    doc = _DOCS.get(item_id)
+    doc = _BY_ID.get(item_id)
     if not doc or doc["team"] != team:
         return None, None
     return doc, os.path.join(_SAMPLES_DIR, doc["file"])
 
 
 def downstream_task(doc: dict) -> tuple:
-    """(request, context, source_label) for a seeded Legal/Finance sample."""
-    team = doc["team"]
-    return team_request(team), None, f"{doc['label']} — {doc['sub']}"
+    """(request, context, source_label) for a screened catalog document."""
+    return team_request(doc["team"]), None, f"{doc['label']} - {doc['sub']}"

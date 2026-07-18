@@ -43,11 +43,18 @@
     </section>
   </main>
 
-  <!-- Hidden file inputs (real uploads) -->
-  <input id="jd-input" type="file" accept=".pdf,.docx,.txt" hidden />
-  <input id="docs-input" type="file" accept=".pdf,.docx,.txt" multiple hidden />
-
   <footer class="footer">cortis · every action is screened before it reaches the AI assistant</footer>
+
+  <!-- File browser modal (in-app catalog; no OS file picker) -->
+  <div id="browse-modal" class="modal-overlay" hidden>
+    <div class="modal wide" role="dialog" aria-modal="true" aria-labelledby="browse-title">
+      <div class="modal-head">
+        <span id="browse-title"></span>
+        <button id="browse-close" class="chip-x" type="button" aria-label="Close">✕</button>
+      </div>
+      <div id="browse-body" class="modal-body"></div>
+    </div>
+  </div>
 
   <!-- Help modal -->
   <div id="help-modal" class="modal-overlay" hidden>

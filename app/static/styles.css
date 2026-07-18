@@ -554,3 +554,20 @@ body {
   background: var(--safe-bg); border: 1px solid var(--safe-line); border-radius: 12px;
 }
 .login-signedin-text { font-size: 14px; color: var(--ink); }
+
+/* ── In-app file browser ─────────────────────────────────── */
+.browse-list { display: flex; flex-direction: column; gap: 8px; }
+.browse-row {
+  display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
+  padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px;
+  background: var(--card); color: var(--ink); cursor: pointer; font: inherit;
+}
+.browse-row:hover { border-color: var(--brand); background: var(--bg); }
+.browse-row.br-added { border-color: var(--safe-line); background: var(--safe-bg); }
+.browse-row:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.br-icon { font-size: 20px; }
+.br-body { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.br-label { font-weight: 600; font-size: 14px; }
+.br-sub { font-size: 12px; color: var(--ink-soft); word-break: break-all; }
+.br-action { font-size: 13px; font-weight: 700; color: var(--brand); white-space: nowrap; }
+.browse-row.br-added .br-action { color: var(--safe); }

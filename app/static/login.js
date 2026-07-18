@@ -16,7 +16,7 @@ async function init() {
   // Which account (if any) is already signed in — that one is shown as current.
   let current = null;
   try {
-    const meRes = await fetch("/api/me");
+    const meRes = await fetch("/api/me", { cache: "no-store" });
     if (meRes.ok) current = await meRes.json();
   } catch (_) { /* not signed in */ }
 
@@ -85,3 +85,8 @@ async function signIn(accountId, btn) {
 }
 
 init();
+
+// If the browser restores this page from its back/forward cache, the script
+// above doesn't re-run — so the "signed in" banner would reflect a stale (often
+// pre-sign-in) snapshot. Reload on bfcache restore so it's always current.
+window.addEventListener("pageshow", (e) => { if (e.persisted) window.location.reload(); });

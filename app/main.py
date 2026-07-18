@@ -141,12 +141,32 @@ def monitoring_page(request: Request):
 
 
 # ── Workspace data + check API ───────────────────────────────────────────────
-@app.get("/api/workspace")
-def api_workspace(request: Request):
+@app.get("/api/catalog")
+def api_catalog(request: Request):
+    """The file catalog the in-app browser lists, grouped by kind, for this team."""
     acct = _current(request)
     if not acct:
         return JSONResponse({"error": "not signed in"}, status_code=401)
-    return JSONResponse(workspaces.workspace_data(acct["team"]))
+    return JSONResponse(workspaces.catalog_for(acct["team"]))
+
+
+@app.get("/api/document")
+def api_document(request: Request, id: str):
+    """Extracted text of one catalog document (used to load a JD as fit context)."""
+    acct = _current(request)
+    if not acct:
+        return JSONResponse({"error": "not signed in"}, status_code=401)
+    doc, path = workspaces.resolve_document(id, acct["team"])
+    if not doc:
+        return _error("That document isn't in your workspace.")
+    with open(path, "rb") as fh:
+        data = fh.read()
+    try:
+        text = extract_from_upload(os.path.basename(path), data).strip()
+    except ExtractionError as exc:
+        return _error(str(exc))
+    return JSONResponse({"id": id, "title": doc["label"], "text": text,
+                         "filename": os.path.basename(path)})
 
 
 @app.post("/api/hr/jd")
@@ -207,6 +227,8 @@ async def api_check(request: Request, item: str = Form(""), jd: str = Form(""),
         except ExtractionError as exc:
             return _error(str(exc))
         req, context, source = workspaces.downstream_task(doc)
+        if team == "hr" and jd.strip():
+            context = jd.strip()          # screen a catalog CV against the chosen JD
     else:
         return _error("Add a document first — upload a file to check.")
 

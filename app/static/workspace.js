@@ -9,24 +9,24 @@ const MAX_ITEMS = 10;
 // offer sample documents to add. Values are i18n keys unless noted (csv* = literal).
 const TEAM = {
   hr: {
-    hasJD: true, showFit: true, samples: false,
-    section: "hr.cv.section", upload: "hr.cv.upload", hint: "hr.cv.hint", none: "hr.cv.none",
+    hasJD: true, showFit: true, docKind: "cv", browse: "browse.cv",
+    section: "hr.cv.section", none: "hr.cv.none",
     screen: "hr.screen", results: "hr.results", need: "hr.needBoth",
     pass: "hr.pass", fail: "hr.fail",
     unit: "hr.summary.screened", sPass: "hr.summary.passed", sBlock: "hr.summary.blocked",
     csvSafe: "Passed", csvBlock: "Not passed - cheating detected",
   },
   legal: {
-    hasJD: false, showFit: false, samples: true,
-    section: "legal.section", upload: "legal.upload", hint: "hr.cv.hint", none: "legal.none",
+    hasJD: false, showFit: false, docKind: "contract", browse: "browse.contract",
+    section: "legal.section", none: "legal.none",
     screen: "legal.screen", results: "legal.results", need: "legal.need",
     pass: "batch.safe", fail: "batch.blocked",
     unit: "legal.unit", sPass: "batch.summary.safe", sBlock: "batch.summary.blocked",
     csvSafe: "Safe", csvBlock: "Blocked - injection detected",
   },
   finance: {
-    hasJD: false, showFit: false, samples: true,
-    section: "finance.section", upload: "finance.upload", hint: "hr.cv.hint", none: "finance.none",
+    hasJD: false, showFit: false, docKind: "invoice", browse: "browse.invoice",
+    section: "finance.section", none: "finance.none",
     screen: "finance.screen", results: "finance.results", need: "finance.need",
     pass: "batch.safe", fail: "batch.blocked",
     unit: "finance.unit", sPass: "batch.summary.safe", sBlock: "batch.summary.blocked",
@@ -36,9 +36,9 @@ const TEAM = {
 
 let me = null;
 let cfg = null;
-let jd = null;            // {title, text, filename} for HR
-let items = [];           // things to screen: {kind:'file', file, name} | {kind:'sample', id, name}
-let samples = [];         // seeded sample docs (Legal/Finance): {id, label, filename, kind, ...}
+let jd = null;            // {id, title, text, filename} for HR
+let items = [];           // catalog docs chosen to screen: {kind:'sample', id, name}
+let catalog = {};         // file catalog grouped by kind: {jd:[…], cv:[…]} / {contract:[…]} / …
 let results = [];         // [{name, verdict, fit, category, excerpt}] in display order
 
 // ── Setup ────────────────────────────────────────────────────────────────
@@ -60,10 +60,9 @@ async function init() {
   $("help-close").addEventListener("click", () => hideModal("help-modal"));
   $("help-modal").addEventListener("click", (e) => { if (e.target === $("help-modal")) hideModal("help-modal"); });
   $("onboard-dismiss").addEventListener("click", dismissOnboard);
+  $("browse-close").addEventListener("click", () => hideModal("browse-modal"));
+  $("browse-modal").addEventListener("click", (e) => { if (e.target === $("browse-modal")) hideModal("browse-modal"); });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeAnyModal(); });
-
-  $("jd-input").addEventListener("change", onJdPicked);
-  $("docs-input").addEventListener("change", onDocsPicked);
 
   if (!localStorage.getItem("cortis_onboarded")) $("onboard").hidden = false;
   if (!sessionStorage.getItem("cortis_welcomed")) {
@@ -71,7 +70,7 @@ async function init() {
     toast(`${t("toast.welcome")} ${me.name}`);
   }
 
-  if (cfg.samples) await loadSamples();
+  await loadCatalog();
   renderWorkspace();
 }
 
@@ -81,11 +80,9 @@ async function signOut() {
 }
 function dismissOnboard() { localStorage.setItem("cortis_onboarded", "1"); $("onboard").hidden = true; }
 
-async function loadSamples() {
-  try {
-    const data = await (await fetch("/api/workspace")).json();
-    samples = data.docs || [];
-  } catch (_) { samples = []; }
+async function loadCatalog() {
+  try { catalog = await (await fetch("/api/catalog")).json(); }
+  catch (_) { catalog = {}; }
 }
 
 // ══════════════════════════ Batch controls (all teams) ══════════════════════
@@ -108,13 +105,13 @@ function buildJdSection() {
     const title = document.createElement("div"); title.className = "jd-title"; title.textContent = jd.title;
     const meta = document.createElement("div"); meta.className = "jd-meta"; meta.textContent = jd.filename;
     const text = document.createElement("pre"); text.className = "jd-text"; text.textContent = jd.text;
-    const replace = mkBtn("secondary-btn", t("hr.jd.replace"), () => $("jd-input").click());
+    const replace = mkBtn("secondary-btn", t("hr.jd.replace"), () => openBrowser("jd"));
     card.appendChild(title); card.appendChild(meta); card.appendChild(text); card.appendChild(replace);
     jdSec.appendChild(card);
   } else {
     const hint = document.createElement("p"); hint.className = "muted-line"; hint.textContent = t("hr.jd.none");
     jdSec.appendChild(hint);
-    jdSec.appendChild(mkBtn("primary-btn", "📄 " + t("hr.jd.upload"), () => $("jd-input").click()));
+    jdSec.appendChild(mkBtn("primary-btn", "🗂️ " + t("browse.jd"), () => openBrowser("jd")));
   }
   return jdSec;
 }
@@ -125,31 +122,15 @@ function renderControls() {
 
   const docSec = section(t(cfg.section));
   const row = document.createElement("div"); row.className = "upload-row";
-  row.appendChild(mkBtn("primary-btn", "📎 " + t(cfg.upload), () => $("docs-input").click()));
-  const hint = document.createElement("span"); hint.className = "file-hint"; hint.textContent = t(cfg.hint);
-  row.appendChild(hint);
+  row.appendChild(mkBtn("primary-btn", "🗂️ " + t(cfg.browse), () => openBrowser("docs")));
   docSec.appendChild(row);
-
-  // Sample documents to add to the batch (Legal / Finance)
-  if (cfg.samples && samples.length) {
-    const sw = document.createElement("div"); sw.className = "samples-add";
-    const lbl = document.createElement("span"); lbl.className = "samples-add-label"; lbl.textContent = t("samples.add");
-    sw.appendChild(lbl);
-    for (const s of samples) {
-      const added = items.some((it) => it.kind === "sample" && it.id === s.id);
-      const b = mkBtn("chip-add", (KIND_ICON[s.kind] || "📄") + " " + s.label, () => addSample(s));
-      b.disabled = added;
-      sw.appendChild(b);
-    }
-    docSec.appendChild(sw);
-  }
 
   if (items.length) {
     const list = document.createElement("ul"); list.className = "cv-list";
     items.forEach((it, i) => {
       const li = document.createElement("li"); li.className = "cv-chip";
       const nm = document.createElement("span");
-      nm.textContent = it.name + (it.kind === "sample" ? " · " + t("samples.tag") : "");
+      nm.textContent = it.name;
       const x = document.createElement("button"); x.className = "chip-x"; x.type = "button";
       x.setAttribute("aria-label", "Remove"); x.textContent = "✕";
       x.addEventListener("click", () => { items.splice(i, 1); renderControls(); });
@@ -175,34 +156,65 @@ function canScreen() {
   return true;
 }
 
-async function onJdPicked(e) {
-  const f = e.target.files[0]; e.target.value = "";
-  if (!f) return;
-  if (f.size > 5 * 1024 * 1024) { toast(t("err.tooLarge"), "error"); return; }
-  const fd = new FormData(); fd.append("file", f);
+// ── In-app file browser (catalog; no OS picker) ──────────────────────────────
+function openBrowser(mode) {                    // mode: "jd" (single) | "docs" (multi)
+  const kind = mode === "jd" ? "jd" : cfg.docKind;
+  const files = catalog[kind] || [];
+  $("browse-title").textContent = mode === "jd" ? t("browse.jd") : t(cfg.browse);
+  const body = $("browse-body"); body.innerHTML = "";
+  if (!files.length) {
+    const p = document.createElement("p"); p.className = "muted-line"; p.textContent = t("browse.empty");
+    body.appendChild(p);
+  } else {
+    const list = document.createElement("div"); list.className = "browse-list";
+    for (const f of files) list.appendChild(browseRow(f, mode));
+    body.appendChild(list);
+  }
+  if (mode === "docs") {
+    const foot = document.createElement("div"); foot.className = "modal-foot";
+    foot.appendChild(mkBtn("primary-btn", t("browse.done"), () => hideModal("browse-modal")));
+    body.appendChild(foot);
+  }
+  showModal("browse-modal");
+}
+
+function browseRow(f, mode) {
+  const row = document.createElement("button"); row.type = "button"; row.className = "browse-row";
+  row.innerHTML = `<span class="br-icon" aria-hidden="true">📄</span>` +
+    `<span class="br-body"><span class="br-label"></span><span class="br-sub"></span></span>` +
+    `<span class="br-action"></span>`;
+  row.querySelector(".br-label").textContent = f.label;
+  row.querySelector(".br-sub").textContent = `${f.sub ? f.sub + " · " : ""}${f.filename} · ${f.size_kb} KB`;
+  const action = row.querySelector(".br-action");
+  const chosen = mode === "jd" ? (jd && jd.id === f.id) : items.some((it) => it.id === f.id);
+  if (chosen) { row.classList.add("br-added"); action.textContent = "✓ " + t("browse.added"); }
+  else action.textContent = t("browse.add");
+  if (mode === "jd") row.addEventListener("click", () => selectJd(f));
+  else row.addEventListener("click", () => toggleDoc(f, row, action));
+  return row;
+}
+
+async function selectJd(f) {
   try {
-    const res = await fetch("/api/hr/jd", { method: "POST", body: fd });
+    const res = await fetch("/api/document?id=" + encodeURIComponent(f.id));
     const d = await res.json();
     if (!res.ok) { toast(d.error || t("err.generic"), "error"); return; }
-    jd = { title: d.title, text: d.text, filename: d.filename };
+    jd = { id: d.id, title: d.title, text: d.text, filename: d.filename };
+    hideModal("browse-modal");
     renderControls();
   } catch (_) { toast(t("err.network"), "error"); }
 }
 
-function onDocsPicked(e) {
-  const picked = [...e.target.files]; e.target.value = "";
-  for (const f of picked) {
-    if (items.length >= MAX_ITEMS) { toast(t("hr.cv.max"), "error"); break; }
-    if (f.size > 5 * 1024 * 1024) { toast(t("err.tooLarge"), "error"); continue; }
-    items.push({ kind: "file", file: f, name: f.name });
+function toggleDoc(f, row, action) {
+  const idx = items.findIndex((it) => it.id === f.id);
+  if (idx >= 0) items.splice(idx, 1);
+  else {
+    if (items.length >= MAX_ITEMS) { toast(t("hr.cv.max"), "error"); return; }
+    items.push({ kind: "sample", id: f.id, name: f.label });
   }
-  renderControls();
-}
-
-function addSample(s) {
-  if (items.length >= MAX_ITEMS) { toast(t("hr.cv.max"), "error"); return; }
-  if (items.some((it) => it.kind === "sample" && it.id === s.id)) return;
-  items.push({ kind: "sample", id: s.id, name: s.label });
+  const added = items.some((it) => it.id === f.id);
+  row.classList.toggle("br-added", added);
+  action.textContent = added ? "✓ " + t("browse.added") : t("browse.add");
   renderControls();
 }
 
@@ -476,7 +488,7 @@ function hideModal(id) {
   overlay.querySelector(".modal").removeEventListener("keydown", trapKeydown);
   if (lastFocused && lastFocused.focus) lastFocused.focus();
 }
-function closeAnyModal() { if (!$("help-modal").hidden) hideModal("help-modal"); }
+function closeAnyModal() { for (const id of ["browse-modal", "help-modal"]) if (!$(id).hidden) hideModal(id); }
 
 function mkBtn(cls, label, onClick) {
   const b = document.createElement("button"); b.className = cls; b.type = "button"; b.textContent = label;
