@@ -548,3 +548,9 @@ body {
   background: var(--safe-bg); border: 1px solid var(--safe-line);
   padding: 3px 10px; border-radius: 999px; white-space: nowrap;
 }
+.login-signedin {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  flex-wrap: wrap; margin-bottom: 16px; padding: 12px 16px;
+  background: var(--safe-bg); border: 1px solid var(--safe-line); border-radius: 12px;
+}
+.login-signedin-text { font-size: 14px; color: var(--ink); }

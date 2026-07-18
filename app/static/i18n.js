@@ -18,6 +18,8 @@ const STRINGS = {
     "login.note": "Demo sign-in — no password required. Single sign-on is a production follow-up.",
     "login.loading": "Loading accounts…",
     "login.failed": "Sign-in failed. Please try again.",
+    "login.signedIn": "You're signed in as",
+    "login.goWorkspace": "Go to your workspace",
 
     "team.hr.title": "Candidate screening",
     "team.hr.blurb": "Upload the job description and candidate CVs — cortis screens every CV for hidden instructions and rates the fit.",
@@ -213,6 +215,8 @@ const STRINGS = {
     "login.note": "Đăng nhập demo — không cần mật khẩu. Đăng nhập một lần (SSO) là bước hoàn thiện cho bản chính thức.",
     "login.loading": "Đang tải tài khoản…",
     "login.failed": "Đăng nhập thất bại. Vui lòng thử lại.",
+    "login.signedIn": "Bạn đang đăng nhập với",
+    "login.goWorkspace": "Về không gian làm việc",
 
     "team.hr.title": "Sàng lọc ứng viên",
     "team.hr.blurb": "Tải lên mô tả công việc và các CV — cortis kiểm tra từng CV để tìm chỉ thị ẩn và đánh giá mức độ phù hợp.",

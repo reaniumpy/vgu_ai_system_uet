@@ -22,6 +22,25 @@ async function init() {
 
   list.innerHTML = "";
   list.removeAttribute("aria-busy");
+
+  // Already signed in? Offer a clear way back to that account's workspace.
+  const wsUrl = current ? (current.team === "security" ? "/monitoring" : "/" + current.team) : null;
+  if (current) {
+    const banner = document.createElement("div");
+    banner.className = "login-signedin";
+    const txt = document.createElement("div"); txt.className = "login-signedin-text";
+    txt.appendChild(document.createTextNode(t("login.signedIn") + " "));
+    const strong = document.createElement("strong");
+    strong.textContent = `${current.name} · ${t("team." + current.team + ".label")}`;
+    txt.appendChild(strong);
+    const go = document.createElement("button");
+    go.className = "primary-btn"; go.type = "button";
+    go.textContent = t("login.goWorkspace") + " →";
+    go.addEventListener("click", () => { window.location.href = wsUrl; });
+    banner.appendChild(txt); banner.appendChild(go);
+    list.parentNode.insertBefore(banner, list);
+  }
+
   for (const a of accounts) {
     const isCurrent = current && current.id === a.id;
     const li = document.createElement("li");
@@ -37,12 +56,13 @@ async function init() {
     btn.querySelector(".ac-title").textContent = a.title;
     btn.querySelector(".ac-team").textContent = t(`team.${a.team}.label`);
     if (isCurrent) {
-      // Already signed in as this account — mark it and don't allow re-selecting it.
-      btn.disabled = true;
-      btn.setAttribute("aria-disabled", "true");
+      // Already signed in as this account — mark it, and make it a way back to
+      // the workspace (not a fresh sign-in) so you're never stranded here.
       const badge = document.createElement("span");
       badge.className = "ac-current"; badge.textContent = t("login.current");
       btn.insertBefore(badge, btn.querySelector(".ac-team"));
+      btn.setAttribute("aria-label", `${a.name} — ${t("login.goWorkspace")}`);
+      btn.addEventListener("click", () => { window.location.href = wsUrl; });
     } else {
       btn.addEventListener("click", () => signIn(a.id, btn));
     }
