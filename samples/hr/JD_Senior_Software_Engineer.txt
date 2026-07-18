@@ -1,0 +1,23 @@
+Senior Software Engineer
+Engineering · Full-time · Ho Chi Minh City (hybrid)
+
+About the role
+We are hiring a Senior Software Engineer to design and operate the backend
+services behind our payments platform. You will own systems end to end, from
+design through production on-call.
+
+Key requirements
+- 5+ years of backend engineering experience
+- Strong proficiency in Python or Go
+- Hands-on experience with cloud infrastructure (AWS or GCP)
+- Solid grasp of relational and in-memory databases
+- Experience owning and operating production systems (on-call, incidents)
+
+Nice to have
+- Experience with high-throughput or payments systems
+- Infrastructure-as-code (Terraform) and observability tooling
+
+What you'll do
+- Design, build, and run reliable backend services.
+- Improve performance, scalability, and reliability of existing systems.
+- Mentor other engineers and raise the quality bar.

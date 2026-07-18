@@ -6,8 +6,9 @@ documents reach the AI assistant.
 """
 
 import os
+import re
 
-from fastapi import FastAPI, Form, Request
+from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
@@ -17,12 +18,16 @@ from .extract import ExtractionError, extract_from_upload
 
 _STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 
-# Per-team task for pasted (ad-hoc) text — no attached JD/context.
-_PASTE_REQUEST = {
-    "hr": "Summarise this résumé: key experience, skills, and total years.",
-    "legal": "Review this agreement in plain language: parties, key obligations, and anything worth a closer legal look.",
-    "finance": "Extract the key details for accounts payable: vendor, invoice number, date, line items, and total.",
-}
+_FIT_RE = re.compile(r"FIT:\s*(Strong|Partial|Weak)", re.I)
+
+
+def _parse_fit(text: str):
+    """Pull the 'FIT: Strong/Partial/Weak' marker out of the assistant's reply."""
+    m = _FIT_RE.search(text or "")
+    fit = m.group(1).capitalize() if m else None
+    cleaned = re.sub(r"^\s*FIT:\s*(Strong|Partial|Weak)\s*\n*", "", text or "", flags=re.I).lstrip()
+    return fit, (cleaned or text)
+
 
 app = FastAPI(title="cortis")
 app.add_middleware(
@@ -145,9 +150,33 @@ def api_workspace(request: Request):
     return JSONResponse(workspaces.workspace_data(acct["team"]))
 
 
+@app.post("/api/hr/jd")
+async def api_hr_jd(request: Request, file: UploadFile = File(...)):
+    """HR uploads a job description; return its title + extracted text."""
+    acct = _current(request)
+    if not acct:
+        return JSONResponse({"error": "Please sign in again."}, status_code=401)
+    if acct["team"] != "hr":
+        return JSONResponse({"error": "not authorised"}, status_code=403)
+    data = await file.read()
+    if len(data) > config.MAX_UPLOAD_BYTES:
+        return _error("That file is too large. Please use a file under 5 MB.")
+    try:
+        text = extract_from_upload(file.filename, data).strip()
+    except ExtractionError as exc:
+        return _error(str(exc))
+    if not text:
+        return _error("That job description appears to be empty.")
+    title = next((ln.strip() for ln in text.splitlines() if ln.strip()), file.filename)
+    if len(title) > 120:
+        title = title[:117] + "…"
+    return JSONResponse({"title": title, "text": text, "filename": file.filename})
+
+
 @app.post("/api/check")
-async def api_check(request: Request, item: str = Form(""), text: str = Form(""),
-                    lang: str = Form("en")):
+async def api_check(request: Request, item: str = Form(""), jd: str = Form(""),
+                    lang: str = Form("en"), file: UploadFile = File(None)):
+    """Screen an uploaded file (or seeded sample); then (if safe) run the team's assistant task."""
     acct = _current(request)
     if not acct:
         return JSONResponse({"error": "Please sign in again."}, status_code=401)
@@ -155,7 +184,20 @@ async def api_check(request: Request, item: str = Form(""), text: str = Form("")
     if team == "security":
         return _error("The monitoring account doesn't screen documents.")
 
-    if item:
+    context = None
+    if file is not None and file.filename:
+        data = await file.read()
+        if len(data) > config.MAX_UPLOAD_BYTES:
+            return _error("That file is too large. Please use a file under 5 MB.")
+        try:
+            document = extract_from_upload(file.filename, data).strip()
+        except ExtractionError as exc:
+            return _error(str(exc))
+        source = file.filename
+        req = workspaces.team_request(team)
+        if team == "hr" and jd.strip():
+            context = jd.strip()
+    elif item:
         doc, path = workspaces.resolve_document(item, team)
         if not doc:
             return _error("That document isn't in your workspace.")
@@ -167,10 +209,10 @@ async def api_check(request: Request, item: str = Form(""), text: str = Form("")
             return _error(str(exc))
         req, context, source = workspaces.downstream_task(doc)
     else:
-        document = (text or "").strip()
-        if not document:
-            return _error("Add a document first — choose one from your workspace or paste text.")
-        req, context, source = _PASTE_REQUEST.get(team, ""), None, "Pasted text"
+        return _error("Add a document first — upload a file to check.")
+
+    if not document:
+        return _error("That document appears to be empty.")
 
     result = guard.check_text(document)
     logstore.record_check(
@@ -179,9 +221,16 @@ async def api_check(request: Request, item: str = Form(""), text: str = Form("")
 
     payload = dict(result)
     payload["source"] = source
-    payload["assistant"] = (
-        assistant.run(req, document, context, lang) if result["verdict"] == "safe" else None
-    )
+    if result["verdict"] == "safe":
+        answer = assistant.run(req, document, context, lang)
+        if team == "hr":
+            fit, answer["text"] = _parse_fit(answer.get("text", ""))
+            payload["fit_level"] = fit
+        payload["assistant"] = answer
+    else:
+        payload["assistant"] = None
+        if team == "hr":
+            payload["fit_level"] = None
     return JSONResponse(payload)
 
 

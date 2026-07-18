@@ -41,11 +41,12 @@
     <section id="docs" class="docs" aria-live="polite">
       <p class="loading-line" data-i18n="ws.loading">Loading your documents…</p>
     </section>
-
-    <p class="paste-row">
-      <button id="paste-btn" class="link-btn" type="button" data-i18n="ws.pasteLink">or check other text you've received</button>
-    </p>
   </main>
+
+  <!-- Hidden file inputs (real uploads) -->
+  <input id="jd-input" type="file" accept=".pdf,.docx,.txt" hidden />
+  <input id="cv-input" type="file" accept=".pdf,.docx,.txt" multiple hidden />
+  <input id="upload-input" type="file" accept=".pdf,.docx,.txt" hidden />
 
   <footer class="footer">cortis · every action is screened before it reaches the AI assistant</footer>
 
@@ -57,24 +58,6 @@
         <button id="modal-close" class="chip-x" type="button" aria-label="Close">✕</button>
       </div>
       <div id="modal-body" class="modal-body"></div>
-    </div>
-  </div>
-
-  <!-- Paste text modal -->
-  <div id="paste-modal" class="modal-overlay" hidden>
-    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="paste-title">
-      <div class="modal-head">
-        <span id="paste-title" data-i18n="paste.title">Check other text</span>
-        <button id="paste-close" class="chip-x" type="button" data-i18n-ph="btn.close" aria-label="Close">✕</button>
-      </div>
-      <div class="modal-body">
-        <textarea id="paste-text" class="doc-input" rows="8"
-          data-i18n-ph="paste.placeholder" placeholder="Paste the text you received here…"></textarea>
-        <div class="modal-foot">
-          <button id="paste-cancel" class="secondary-btn" type="button" data-i18n="btn.cancel">Cancel</button>
-          <button id="paste-run" class="primary-btn" type="button" data-i18n="paste.run">Check this text</button>
-        </div>
-      </div>
     </div>
   </div>
 

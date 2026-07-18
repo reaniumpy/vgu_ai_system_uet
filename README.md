@@ -27,16 +27,17 @@ Then open **http://localhost:8000** and **sign in** (demo accounts, no password)
 
 | Account | Team | Workspace |
 |---|---|---|
-| Sophia Tran / Mai Pham | HR | **Candidate screening** — pick a candidate → guard checks the résumé → fit assessment against the position's job description |
-| Nghia Le | Legal | **Contract review** — key terms, obligations, and risk flags |
-| Long Vu | Finance | **Invoice processing** — extract vendor, amounts, totals for payment |
+| Sophia Tran | HR | **Candidate screening** — upload the job description + up to 10 CVs → guard screens every CV → pass/not-pass list with a fit rating against the JD |
+| Nghia Le | Legal | **Contract review** — upload a contract (or pick a sample) → guard checks it → key terms, obligations, and risk flags |
+| Long Vu | Finance | **Invoice processing** — upload an invoice (or pick a sample) → guard checks it → extract vendor, amounts, totals for payment |
 | An Tran | Security | **Monitoring** — org-wide activity: checks, blocks by team, who checked what |
 
 Each workspace only shows its own team's documents, and every action is screened first —
-blocked documents never reach the assistant. HR candidates are pre-linked to the role they
-applied for, so the job description is matched automatically (no re-attaching). Every screen
-has an **English / Tiếng Việt** toggle; on a block the app shows the exact flagged passage
-inline, and a first-run onboarding banner + per-workspace **Help** explain the flow.
+blocked documents never reach the assistant. HR uploads the job description once and batch-screens
+the CVs against it (no re-attaching per candidate); Legal and Finance upload their own document or
+pick a sample. Every screen has an **English / Tiếng Việt** toggle; on a block the app shows the
+exact flagged passage inline, and a first-run onboarding banner + per-workspace **Help** explain
+the flow.
 
 **Enabling the downstream AI assistant (optional).** On a *safe* document the app forwards it
 to OpenAI/ChatGPT (`gpt-4o-mini` by default) for the team's task. Paste your key into the
