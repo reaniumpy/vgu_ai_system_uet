@@ -144,11 +144,44 @@ _SAFE_EXPLANATION = (
 )
 
 
-def _tag_intent(text: str) -> str:
+def _tag_intent(text: str):
+    """Return (category, match) — the first intent pattern that fires, and where.
+
+    ``match`` (or None for 'generic') lets the caller show the exact passage that
+    justifies the category, instead of whatever segment the model scored highest.
+    """
     for category, pattern in _INTENT_PATTERNS:
-        if pattern.search(text):
-            return category
-    return "generic"
+        m = pattern.search(text)
+        if m:
+            return category, m
+    return "generic", None
+
+
+def _excerpt_for_match(text: str, m: "re.Match", limit: int = 240) -> Optional[str]:
+    """The passage that matched an intent pattern — the plain-language 'evidence'.
+
+    Expand to the blank-line-delimited paragraph containing the match so the user
+    sees the whole hidden instruction; if that paragraph runs longer than ``limit``,
+    return a window centred on the match so the instruction itself stays visible.
+    """
+    para_start = 0
+    for bm in re.finditer(r"\n\s*\n", text[: m.start()]):
+        para_start = bm.end()
+    nm = re.search(r"\n\s*\n", text[m.end():])
+    para_end = m.end() + nm.start() if nm else len(text)
+    para = re.sub(r"\s+", " ", text[para_start:para_end].strip())
+    if len(para) <= limit:
+        return para or None
+    pad = max(0, (limit - (m.end() - m.start())) // 2)
+    ws = max(para_start, m.start() - pad)
+    we = min(para_end, m.end() + pad)
+    frag = text[ws:we]
+    if ws > para_start:  # snap off a partial leading word
+        frag = frag[frag.find(" ") + 1:] if " " in frag else frag
+    if we < para_end:  # snap off a partial trailing word
+        frag = frag[: frag.rfind(" ")] if " " in frag else frag
+    frag = re.sub(r"\s+", " ", frag.strip())
+    return ("…" if ws > para_start else "") + frag + ("…" if we < para_end else "")
 
 
 def _segments(text: str) -> list:
@@ -241,8 +274,11 @@ def check_text(text: str) -> dict:
             "matched_excerpt": None,
         }
 
-    category = _tag_intent(text)
+    category, match = _tag_intent(text)
     narrative = _NARRATIVES.get(category, _NARRATIVES["generic"])
+    # Show the passage that justifies the category; for an uncategorised block,
+    # fall back to whatever segment the model scored most suspicious.
+    excerpt = _excerpt_for_match(text, match) if match else _short_excerpt(worst_text)
     return {
         "verdict": "blocked",
         "headline": "Blocked — this document tries to hijack the AI",
@@ -251,7 +287,7 @@ def check_text(text: str) -> dict:
         "category": category,
         "category_label": narrative["label"],
         "confidence": round(max_prob, 4),
-        "matched_excerpt": _short_excerpt(worst_text),
+        "matched_excerpt": excerpt,
     }
 
 
